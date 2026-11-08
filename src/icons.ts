@@ -1,0 +1,29 @@
+// Regular Carbon icons; direct imports keep the mobile bundle small.
+export { default as ArrowUpRight } from "@carbon/icons-react/es/ArrowUpRight.js";
+export { default as ChevronRight } from "@carbon/icons-react/es/ChevronRight.js";
+export { default as ChevronLeft } from "@carbon/icons-react/es/ChevronLeft.js";
+export { default as CircleHelp } from "@carbon/icons-react/es/Help.js";
+export { default as HardDrive } from "@carbon/icons-react/es/DataBase.js";
+export { default as LayoutGrid } from "@carbon/icons-react/es/Grid.js";
+export { default as PanelsTopLeft } from "@carbon/icons-react/es/ViewMode_1.js";
+export { default as Pause } from "@carbon/icons-react/es/Pause.js";
+export { default as Play } from "@carbon/icons-react/es/Play.js";
+export { default as Search } from "@carbon/icons-react/es/Search.js";
+export { default as ShieldCheck } from "@carbon/icons-react/es/Security.js";
+export { default as SkipBack } from "@carbon/icons-react/es/SkipBack.js";
+export { default as SkipForward } from "@carbon/icons-react/es/SkipForward.js";
+export { default as SlidersHorizontal } from "@carbon/icons-react/es/SettingsAdjust.js";
+export { default as Usb } from "@carbon/icons-react/es/Usb.js";
+export { default as Video } from "@carbon/icons-react/es/Video.js";
+export { default as X } from "@carbon/icons-react/es/Close.js";
+export { default as RotateCcw } from "@carbon/icons-react/es/Reset.js";
+export { default as RefreshCw } from "@carbon/icons-react/es/Renew.js";
+export { default as LoaderCircle } from "@carbon/icons-react/es/CircleDash.js";
+export { default as Check } from "@carbon/icons-react/es/Checkmark.js";
+export { default as Maximize } from "@carbon/icons-react/es/Maximize.js";
+export { default as Minimize } from "@carbon/icons-react/es/Minimize.js";
+export { default as CalendarIcon } from "@carbon/icons-react/es/Calendar.js";
+export { default as MobileLandscape } from "@carbon/icons-react/es/MobileLandscape.js";
+
+export { default as Rewind10 } from "@carbon/icons-react/es/Rewind_10.js";
+export { default as Forward10 } from "@carbon/icons-react/es/Forward_10.js";
