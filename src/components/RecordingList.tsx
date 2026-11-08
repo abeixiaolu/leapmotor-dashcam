@@ -148,7 +148,8 @@ export function RecordingList(p: Props) {
               </div>
               {p.fileSelectionLimit && (
                 <p className="text-caption-1-regular text-text-secondary">
-                  移动端每次选择一段 .h264 录像，添加到现有列表；重复选择不会重复添加。
+                  移动端每次最多选择 {p.fileSelectionLimit} 段 .h264
+                  录像，添加到现有列表；重复选择不会重复添加。
                 </p>
               )}
               {p.scanError && (

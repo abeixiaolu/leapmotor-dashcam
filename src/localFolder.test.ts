@@ -147,6 +147,7 @@ describe("file picker lifecycle", () => {
     files: File[] = [];
     value = "";
     style = {};
+    multiple = false;
     setAttribute = vi.fn();
     click = vi.fn();
     remove = vi.fn();
@@ -281,11 +282,14 @@ describe("file picker lifecycle", () => {
     vi.stubGlobal("navigator", { userAgent: "iPhone", platform: "iPhone" });
     const pending = pickRecordingFiles();
     expect(input.click).toHaveBeenCalledOnce();
+    expect(input.multiple).toBe(true);
     expect(input.setAttribute).not.toHaveBeenCalledWith("webkitdirectory", "");
     expect(input.setAttribute).not.toHaveBeenCalledWith("directory", "");
     input.files = Array.from({ length: 11 }, (_, i) => recording(`${i}.h264`, ""));
     input.dispatchEvent(new Event("change"));
-    await expect(pending).rejects.toThrow("最多选择 1 个文件，本次选择了 11 个");
+    await expect(pending).rejects.toThrow(
+      `最多选择 ${IPHONE_RECORDING_LIMIT} 个文件，本次选择了 11 个`,
+    );
     await vi.runOnlyPendingTimersAsync();
     expect(input.remove).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
@@ -314,20 +318,23 @@ describe("iPhone recording limits", () => {
     expect(isIPhoneBrowser()).toBe(expected);
   });
 
-  it("accepts one individually selected recording", async () => {
+  it("accepts up to the mobile recording limit", async () => {
     const files = Array.from({ length: IPHONE_RECORDING_LIMIT }, (_, i) =>
       recording(`${i}.h264`, ""),
     );
     const result = await buildDriveFromFiles(files);
-    expect(result.drive.recordings).toHaveLength(1);
-    expect(result.fileMap.size).toBe(1);
+    expect(result.drive.recordings).toHaveLength(IPHONE_RECORDING_LIMIT);
+    expect(result.fileMap.size).toBe(IPHONE_RECORDING_LIMIT);
   });
 
-  it("rejects 11 selected files before hashing or reading any content", async () => {
-    const files = Array.from({ length: 11 }, (_, i) => recording(`${i}.h264`, ""));
+  it("rejects selections above the mobile limit before hashing or reading any content", async () => {
+    const over = IPHONE_RECORDING_LIMIT + 1;
+    const files = Array.from({ length: over }, (_, i) => recording(`${i}.h264`, ""));
     const reads = files.map((file) => vi.spyOn(file, "arrayBuffer"));
     const digest = vi.spyOn(crypto.subtle, "digest");
-    await expect(buildDriveFromFiles(files)).rejects.toThrow("最多选择 1 个文件，本次选择了 11 个");
+    await expect(buildDriveFromFiles(files)).rejects.toThrow(
+      `最多选择 ${IPHONE_RECORDING_LIMIT} 个文件，本次选择了 ${over} 个`,
+    );
     expect(digest).not.toHaveBeenCalled();
     for (const read of reads) expect(read).not.toHaveBeenCalled();
   });
