@@ -132,7 +132,8 @@ validate_archive_contents() {
         # 其他未知类型也拒绝
         log_error "归档包含未知文件类型: $line"
         return 1
-    done < <(tar -tvzf "${archive_file}" 2>&1)
+    # stderr 单独丢弃：macOS/GNU tar 的 warning 不能当 listing 行解析
+    done < <(tar -tvzf "${archive_file}" 2>/dev/null)
     
     log_info "归档内容验证通过: ${member_count} 个成员"
 }
@@ -149,17 +150,17 @@ extract_archive() {
     mkdir -p "${extract_dir}"
     chown nobody:nogroup "${extract_dir}"
     
-    # 以 nobody 权限解压
+    # 以 nobody 权限解压（stdout 必须干净，供调用方 $() 捕获路径）
     if ! sudo -u nobody tar -xzf "${archive_file}" \
          -C "${extract_dir}" \
          --no-same-owner \
          --no-same-permissions \
-         2>&1 >&2; then
+         >/dev/null; then
         log_error "解压归档失败"
         return 1
     fi
     
-    echo "${extract_dir}"
+    printf '%s\n' "${extract_dir}"
 }
 
 # 严格验证提取的内容
@@ -271,7 +272,7 @@ validate_extracted() {
     
     if [[ $symlink_count -gt 0 ]]; then
         log_error "提取目录包含软链接"
-        find "${extract_dir}" -type l 2>&1 >&2
+        find "${extract_dir}" -type l >&2
         return 1
     fi
     
@@ -402,8 +403,9 @@ atomic_switch() {
         echo "" > "${DEPLOY_PATH}/.previous-release"
     fi
     
-    # 创建临时符号链接
-    ln -snf "${release_dir}" "${CURRENT_LINK}.tmp"
+    # 使用相对符号链接（容器把 /srv/dashcam 挂为 /srv，绝对路径 /srv/dashcam/... 会断）
+    local rel_target="releases/${release_name}"
+    ln -snf "${rel_target}" "${CURRENT_LINK}.tmp"
     
     # 原子性重命名
     if ! mv -Tf "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"; then
@@ -519,7 +521,10 @@ rollback() {
         return 1
     fi
     
-    ln -snf "$previous_release" "${CURRENT_LINK}.tmp"
+    # previous_release 存的是绝对路径；写成相对 releases/<name> 以兼容容器挂载
+    local prev_name
+    prev_name=$(basename "$previous_release")
+    ln -snf "releases/${prev_name}" "${CURRENT_LINK}.tmp"
     mv -Tf "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"
     
     log_info "已回滚到: $previous_release"
