@@ -2,7 +2,6 @@ import { MotionText } from "@/components/Motion";
 import { useState } from "react";
 import Calendar from "@carbon/icons-react/es/Calendar.js";
 import Help from "@carbon/icons-react/es/Help.js";
-import Security from "@carbon/icons-react/es/Security.js";
 import Usb from "@carbon/icons-react/es/Usb.js";
 import Video from "@carbon/icons-react/es/Video.js";
 import ChevronRight from "@carbon/icons-react/es/ChevronRight.js";
@@ -84,22 +83,20 @@ export function RecordingList(p: Props) {
         >
           <div className="flex flex-col gap-4 px-4 pt-5 pb-4">
             <div className="flex flex-col gap-3">
-              <h1 className="text-caption-1-semibold text-text-secondary">录像资料库</h1>
+              <div className="flex items-center justify-between gap-2">
+                <h1 className="text-caption-1-semibold text-text-secondary">录像资料库</h1>
+                {p.drive && (
+                  <p className="shrink-0 text-caption-1-regular text-text-tertiary">
+                    {p.records.length} 段录像
+                  </p>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <Usb className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
                 <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">
                   {p.drive?.name || "未选择录像"}
                 </span>
-                <span className="flex shrink-0 items-center gap-1 text-caption-1-regular text-text-tertiary">
-                  <Security className="size-3" aria-hidden />
-                  只读
-                </span>
               </div>
-              {p.drive && (
-                <p className="text-caption-1-regular text-text-tertiary">
-                  {p.records.length} 段录像 · 本机读取
-                </p>
-              )}
               <div className="flex flex-wrap gap-2">
                 <Button
                   size="small"
@@ -122,7 +119,7 @@ export function RecordingList(p: Props) {
                   </Button>
                 )}
               </div>
-              {(p.picking || p.pickProgress) && (
+              {p.picking && (
                 <p
                   className="motion-enter text-caption-1-regular text-text-secondary"
                   role="status"

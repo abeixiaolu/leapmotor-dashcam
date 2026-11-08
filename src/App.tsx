@@ -80,6 +80,11 @@ export default function App() {
   const [picking, setPicking] = useState(false);
   const [pickProgress, setPickProgress] = useState("");
   const localFilesRef = useRef<Map<string, File>>(new Map());
+  const manualSourceRef = useRef(false);
+  const [initialScan, setInitialScan] = useState(() =>
+    /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname),
+  );
+  const autoRecordingsRef = useRef(new Map<string, Recording>());
   const playerRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState(false);
   const exitStage = useCallback(() => {
@@ -197,6 +202,7 @@ export default function App() {
       setPickProgress(`正在识别 ${files.length} 个文件…`);
       const { drive, fileMap } = await buildDriveFromFiles(files);
       if (gen !== pickGenRef.current || ac.signal.aborted) return;
+      manualSourceRef.current = true;
       localFilesRef.current = fileMap;
       setDrives([drive]);
       setDriveId(drive.id);
@@ -262,6 +268,55 @@ export default function App() {
     [picking, cancelFolderPick, applyPickedFiles],
   );
 
+  useEffect(() => {
+    if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    let signature = "";
+    let connected = false;
+    const scan = async () => {
+      if (manualSourceRef.current) return;
+      try {
+        const response = await fetch("/api/local-drives", { signal: controller.signal });
+        // Static deployments retain the browser file picker.
+        if (!response.headers.get("content-type")?.includes("application/json")) return;
+        connected = true;
+        if (!response.ok) throw new Error("无法扫描 U 盘，请检查连接及磁盘访问权限。");
+        const result = (await response.json()) as { drives: Drive[] };
+        if (controller.signal.aborted || manualSourceRef.current) return;
+        const nextSignature = JSON.stringify(result.drives);
+        if (signature !== nextSignature) {
+          signature = nextSignature;
+          autoRecordingsRef.current = new Map(
+            result.drives.flatMap((drive) =>
+              drive.recordings.map((recording) => [recording.id, recording] as const),
+            ),
+          );
+          setDrives(result.drives);
+        }
+        setScanError(
+          result.drives.length ? "" : "未发现录像 U 盘，插入后会自动扫描。也可手动选择文件夹。",
+        );
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        if (connected)
+          setScanError(error instanceof Error ? error.message : "扫描失败，请检查 U 盘连接。");
+      } finally {
+        if (!controller.signal.aborted) setInitialScan(false);
+      }
+      if (!controller.signal.aborted) timer = setTimeout(() => void scan(), 4000);
+    };
+    void scan();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, []);
+
+  const autoAvailable =
+    drives.some((drive) => drive.recordings.some((recording) => recording.id === selected)) &&
+    !manualSourceRef.current;
+
   const pickFolder = useCallback(() => beginPick("directory"), [beginPick]);
   const pickFiles = useCallback(() => beginPick("files"), [beginPick]);
   useEffect(() => {
@@ -282,12 +337,31 @@ export default function App() {
       setStatus("idle");
       return;
     }
+    if (initialScan && !manualSourceRef.current) {
+      setStatus("preparing");
+      setPickProgress("正在自动扫描 U 盘…");
+      return;
+    }
     const controller = new AbortController();
     let objectURL: string | undefined;
     setStatus("preparing");
     const prepare = async () => {
       try {
-        const localFile = localFilesRef.current.get(selected);
+        let localFile = localFilesRef.current.get(selected);
+        const autoRecording = autoRecordingsRef.current.get(selected);
+        if (!localFile && autoRecording && !manualSourceRef.current) {
+          setPickProgress("正在从 U 盘读取录像…");
+          const response = await fetch(`/api/local-drives/${encodeURIComponent(selected)}`, {
+            signal: controller.signal,
+          });
+          if (!response.ok)
+            throw new Error(
+              response.status === 413
+                ? "这段录像超过 512 MB，请选择较小的片段。"
+                : "无法读取录像，请确认 U 盘仍然连接。",
+            );
+          localFile = new File([await response.blob()], autoRecording.name);
+        }
         if (!localFile)
           throw new Error("请重新选择包含这段录像的文件夹。刷新页面后需要重新授权读取。");
         const { prepareRecording } = await import("./media/prepare");
@@ -312,7 +386,7 @@ export default function App() {
       controller.abort();
       if (objectURL) URL.revokeObjectURL(objectURL);
     };
-  }, [selected, retry, page]);
+  }, [selected, retry, page, autoAvailable, initialScan]);
 
   const choose = (id: string) => {
     void navigate({ to: "/recordings/$recordingId", params: { recordingId: id } });

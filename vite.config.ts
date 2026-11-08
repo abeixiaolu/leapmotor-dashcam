@@ -1,12 +1,14 @@
 import { defineConfig } from "vite-plus";
 
+import { localDrivesPlugin } from "./server/localDrives";
+
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   resolve: { alias: { "@": new URL("./src", import.meta.url).pathname } },
   base: "./",
-  plugins: [react(), tailwindcss()],
+  plugins: [localDrivesPlugin(), react(), tailwindcss()],
   optimizeDeps: { exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/core"] },
   worker: { format: "es" },
   server: { host: "127.0.0.1" },
