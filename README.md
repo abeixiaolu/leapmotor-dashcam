@@ -1,6 +1,6 @@
 # 零跑记录仪
 
-[![CI](https://github.com/USERNAME/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/USERNAME/REPO/actions/workflows/ci.yml)
+[![CI](https://github.com/abeixiaolu/leapmotor-dashcam/actions/workflows/ci.yml/badge.svg)](https://github.com/abeixiaolu/leapmotor-dashcam/actions/workflows/ci.yml)
 
 纯浏览器运行的零跑行车记录仪播放器，使用 Vite+、React 和 TanStack Router。支持 `driverecord` / `sentinel` 下的原始 `.h264` 四路合成录像。只需部署静态网页，不需要 Node 服务端或安装 FFmpeg。
 
