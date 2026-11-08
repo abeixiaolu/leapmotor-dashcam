@@ -130,7 +130,7 @@ export interface InputBaseProps extends Omit<AriaInputProps, "size" | "className
 
 const inputStyles = sortCx({
   field: [
-    "relative flex w-full items-center",
+    "control-height input-control relative flex w-full items-center",
     "rounded-2lg",
     "bg-background-tertiary-default text-foreground-icon-tertiary",
     "ring-2 ring-inset ring-transparent",
@@ -161,7 +161,7 @@ const inputStyles = sortCx({
     "aria-invalid:placeholder:text-text-error-placeholder",
   ].join(" "),
 
-  icon: "size-5 shrink-0",
+  icon: "size-4 shrink-0",
 });
 
 /** The field shell's state for a render-prop className. */

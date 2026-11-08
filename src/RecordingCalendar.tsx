@@ -46,7 +46,7 @@ export function RecordingCalendar({
           <span key={d}>{d}</span>
         ))}
       </div>
-      <div className="calendar-days">
+      <div key={month} className="calendar-days motion-enter">
         {calendarCells(month).map((day, i) =>
           day ? (
             <button

@@ -1,0 +1,55 @@
+.field-slider:not([data-disabled]) {
+  cursor: ew-resize;
+}
+.field-slider-surface {
+  /* A tiny edge stretch, independent of labels, values, focus and hit geometry. */
+  left: min(0px, var(--field-pull, 0px));
+  right: calc(-1 * max(0px, var(--field-pull, 0px)));
+  transition:
+    border-color 160ms ease,
+    box-shadow 180ms ease;
+}
+.field-slider-fill {
+  inset-inline-start: var(--field-start, 0%);
+  inset-inline-end: calc(100% - var(--field-end, 0%));
+  transition: background-color 160ms ease;
+}
+.field-slider-marker {
+  inset-inline-start: var(--field-end, 0%);
+  transform: translateX(-50%);
+  transition:
+    background-color 140ms ease,
+    opacity 120ms ease;
+}
+.field-slider:not([data-disabled]):hover .field-slider-surface {
+  border-color: var(--color-border-button-hover);
+}
+.field-slider:not([data-disabled]):hover .field-slider-marker,
+.field-slider[data-dragging="true"] .field-slider-marker {
+  background-color: var(--color-foreground-icon-secondary);
+}
+.field-slider[data-dragging="true"] .field-slider-fill {
+  background-color: var(--color-background-secondary-hover);
+}
+.field-slider[data-dragging="true"] .field-slider-surface {
+  border-color: var(--color-foreground-icon-secondary);
+}
+.field-slider:has(:focus-visible) .field-slider-surface {
+  outline: 2px solid var(--color-border-focus-ring);
+  outline-offset: 2px;
+}
+.field-slider[data-visual-edge="true"] .field-slider-marker,
+.field-slider[data-elastic="true"] .field-slider-marker {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .field-slider-surface,
+  .field-slider-fill,
+  .field-slider-marker {
+    transition: none;
+  }
+}
+
+.field-slider:dir(rtl) .field-slider-marker {
+  transform: translateX(50%);
+}

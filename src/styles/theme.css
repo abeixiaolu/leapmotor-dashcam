@@ -3,7 +3,8 @@
  *
  * Layered as Tailwind v4 expects:
  *   @theme { ... }     primitives + ramp overrides → Tailwind utilities
- *   :root { ... }      semantic tokens (light mode) — reference primitives
+ *   :root {
+ ... }      semantic tokens (light mode) — reference primitives
  *   .dark { ... }      semantic overrides (dark mode) — landed when designed
  *   @theme inline {..} re-export of semantic tokens so they become utilities
  *
@@ -32,18 +33,18 @@
    * primitives above. Content/data blues (charts, status chips, calendar
    * events, info notifications) deliberately keep referencing blue-*.
    * --------------------------------------------------------------------------*/
-  /* Brand: green accent (user-specified). Re-tints CTAs/selection via accent-*. */
-  --color-accent-50: var(--color-green-50);
-  --color-accent-100: var(--color-green-100);
-  --color-accent-200: var(--color-green-200);
-  --color-accent-300: var(--color-green-300);
-  --color-accent-400: var(--color-green-400);
-  --color-accent-500: var(--color-green-500);
-  --color-accent-600: var(--color-green-600);
-  --color-accent-700: var(--color-green-700);
-  --color-accent-800: var(--color-green-800);
-  --color-accent-900: var(--color-green-900);
-  --color-accent-950: var(--color-green-950);
+  /* Neutral controls let the camera footage carry the color. */
+  --color-accent-50: var(--color-neutral-50);
+  --color-accent-100: var(--color-neutral-100);
+  --color-accent-200: var(--color-neutral-200);
+  --color-accent-300: var(--color-neutral-300);
+  --color-accent-400: var(--color-neutral-400);
+  --color-accent-500: var(--color-neutral-500);
+  --color-accent-600: var(--color-neutral-600);
+  --color-accent-700: var(--color-neutral-700);
+  --color-accent-800: var(--color-neutral-800);
+  --color-accent-900: var(--color-neutral-900);
+  --color-accent-950: var(--color-neutral-950);
 
   /* ----- Typography ----------------------------------------------------------
    * Font sizes, weights, line-heights, and tracking all match Tailwind v4
@@ -65,10 +66,10 @@
    * Extra step between lg (8) and xl (12). Used by medium-size buttons.
    * Figma name: radius/2lg.
    * --------------------------------------------------------------------------*/
-  --radius-2lg: 10px;
+  --radius-2lg: 4px;
   /* Figma `radius/2,5xl`: kanban columns and other large inset panels. */
-  --radius-2-5xl: 20px;
-  --radius-notification-card: 10px;
+  --radius-2-5xl: 4px;
+  --radius-notification-card: 4px;
 
   /* ----- Shadows -------------------------------------------------------------
    * 2xs, xs, 2xl and the inner shadows already match Tailwind v4. Sizes sm, md,
@@ -152,6 +153,13 @@
  * Figma. Direction inferred — confirm visually against Figma.
  * --------------------------------------------------------------------------- */
 :root {
+  /* Footage overlays remain legible over video in both themes. */
+  --color-camera-surface: var(--color-black);
+  --color-camera-overlay: color-mix(in srgb, var(--color-black) 65%, transparent);
+  --color-camera-foreground: var(--color-neutral-100);
+  --color-camera-muted: var(--color-neutral-300);
+  --color-camera-border: color-mix(in srgb, var(--color-white) 24%, transparent);
+  --color-camera-hover: color-mix(in srgb, var(--color-white) 8%, transparent);
   /* Foreground (icons + on-fill content) */
   --color-foreground-full: var(--color-white);
   --color-foreground-icon-primary: var(--color-neutral-950);

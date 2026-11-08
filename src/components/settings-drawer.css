@@ -1,0 +1,24 @@
+/* Flat switch treatment matches the filled parameter fields. */
+.settings-switch > span[aria-hidden] {
+  background-image: none;
+  background-color: var(--color-background-tertiary-default);
+  box-shadow: none;
+}
+.settings-switch > span[aria-hidden] > span {
+  background-image: none;
+  background-color: var(--color-foreground-icon-secondary);
+  box-shadow: none;
+}
+.settings-switch[data-selected] > span[aria-hidden] > span {
+  background-color: var(--color-control-indicator-background);
+}
+.settings-switch > span[aria-hidden] > span > span {
+  display: none;
+}
+.settings-switch > span:last-child {
+  color: var(--color-text-secondary);
+}
+
+.settings-switch[data-selected] > span[aria-hidden] {
+  background-color: var(--color-text-primary);
+}

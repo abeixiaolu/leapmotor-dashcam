@@ -74,7 +74,7 @@ export interface ButtonLinkProps extends Omit<AnchorHTMLAttributes<HTMLAnchorEle
 
 const styles = sortCx({
   base: [
-    "inline-flex items-center justify-center gap-0.5 whitespace-nowrap overflow-hidden",
+    "control-height inline-flex items-center justify-center gap-0.5 whitespace-nowrap overflow-hidden",
     "font-sans select-none cursor-pointer",
     "button-press-motion",
     "outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-border-focus-ring",
@@ -95,14 +95,14 @@ const styles = sortCx({
   //   Xs     → forces 24×24, content-centered — used for the calendar
   //            template's edit-icon buttons (timezone/participants/reminder).
   iconOnlySize: {
-    medium: "", // base size already produces 36×36 with a 20px icon
-    small: "size-8 p-0", // hard 32×32, content-centered
-    xs: "size-6 p-0", // hard 24×24, content-centered
+    medium: "control-square p-0",
+    small: "control-square size-8 p-0", // hard 32×32, content-centered
+    xs: "control-square size-8 p-0", // hard 24×24, content-centered
   },
 
   icon: {
-    medium: "size-5 shrink-0", // 20px
-    small: "size-[18px] shrink-0", // 18px
+    medium: "size-4 shrink-0", // 16px inside the 32px control
+    small: "size-4 shrink-0", // 16px
     xs: "size-3.5 shrink-0", // 14px
   },
 
@@ -160,6 +160,7 @@ export function Button({
         styles.base,
         styles.size[size],
         styles.variant[variant],
+        (Leading || Trailing) && (size === "xs" ? "text-caption-1-regular" : "text-body-regular"),
         iconOnly && styles.iconOnlySize[size],
         className,
       )}
@@ -197,6 +198,7 @@ export function ButtonLink({
         styles.base,
         styles.size[size],
         styles.variant[variant],
+        (Leading || Trailing) && (size === "xs" ? "text-caption-1-regular" : "text-body-regular"),
         iconOnly && styles.iconOnlySize[size],
         className,
       )}

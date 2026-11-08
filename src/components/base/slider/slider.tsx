@@ -9,6 +9,8 @@ import {
 } from "react-aria-components";
 import type { SliderProps as AriaSliderProps } from "react-aria-components";
 import { cx } from "@/utils/cx";
+import { useFieldMotion } from "./use-field-motion";
+import "./field-slider.css";
 
 type SliderValue = number | number[];
 
@@ -16,6 +18,8 @@ type SliderBaseProps<T extends SliderValue> = Omit<
   AriaSliderProps<T>,
   "children" | "className" | "orientation"
 > & {
+  /** Filled field: label and value overlay a full-height range. */
+  variant?: "standard" | "field";
   /** Optional visible label associated with every thumb. */
   label?: ReactNode;
   /** Show the exact value in a persistent bubble above each thumb. Default `true`. */
@@ -48,6 +52,7 @@ type SliderBaseInternalProps<T extends SliderValue> = SliderBaseProps<T> & {
  */
 function SliderBase<T extends SliderValue>({
   className,
+  variant = "standard",
   label,
   showTooltip = true,
   formatValue,
@@ -71,6 +76,27 @@ function SliderBase<T extends SliderValue>({
         const startPercent = isRange ? state.getThumbPercent(0) : 0;
         const endPercent = state.getThumbPercent(state.values.length - 1);
 
+        if (variant === "field") {
+          return (
+            <FieldTrack
+              start={startPercent}
+              end={endPercent}
+              disabled={!!props.isDisabled}
+              label={label}
+              value={formatValue?.(state.values[0], 0) ?? state.getThumbValueLabel(0)}
+            >
+              {state.values.map((_, index) => (
+                <AriaSliderThumb
+                  key={index}
+                  index={index}
+                  aria-label={thumbLabels[index]}
+                  className="top-1/2 h-full w-px opacity-0 outline-none"
+                />
+              ))}
+            </FieldTrack>
+          );
+        }
+
         return (
           <>
             {label != null && (
@@ -78,14 +104,14 @@ function SliderBase<T extends SliderValue>({
             )}
 
             <AriaSliderTrack
-              className={cx("relative h-8 w-full touch-none", showTooltip && "mt-8")}
+              className={cx("control-height relative h-8 w-full touch-none", showTooltip && "mt-8")}
             >
               {({ isHovered }) => (
                 <>
                   <span
                     aria-hidden
                     className={cx(
-                      "absolute top-1/2 end-0 start-0 h-1.5 -translate-y-1/2 rounded-full",
+                      "absolute top-1/2 end-0 start-0 h-1 -translate-y-1/2 rounded-full",
                       "bg-background-tertiary-default shadow-[inset_0_1px_1px_rgb(0_0_0/0.06)]",
                       "transition-colors duration-150 ease",
                       isHovered && "bg-background-tertiary-hover",
@@ -94,7 +120,7 @@ function SliderBase<T extends SliderValue>({
                   <span
                     aria-hidden
                     className={cx(
-                      "absolute top-1/2 h-1.5 -translate-y-1/2 rounded-full",
+                      "absolute top-1/2 h-1 -translate-y-1/2 rounded-full",
                       "bg-linear-to-r from-accent-500 to-accent-600",
                       "shadow-[inset_0_1px_0_rgb(255_255_255/0.24),0_1px_2px_rgb(4_80_226/0.16)]",
                     )}
@@ -122,7 +148,7 @@ function SliderBase<T extends SliderValue>({
                           isDisabled,
                         }) =>
                           cx(
-                            "top-1/2 size-5 rounded-full border border-border-button-default outline-none",
+                            "top-1/2 size-4 rounded-full border border-border-button-default outline-none",
                             "flex items-center justify-center bg-control-indicator-background",
                             "shadow-[0_2px_4px_rgb(0_0_0/0.10),inset_0_1px_0_rgb(255_255_255/0.8)]",
                             "transition-[scale,box-shadow,border-color] duration-150 ease",
@@ -159,7 +185,7 @@ function SliderBase<T extends SliderValue>({
                             <span
                               aria-hidden
                               className={cx(
-                                "size-2 rounded-full bg-linear-to-b from-accent-500 to-accent-600",
+                                "size-1.5 rounded-full bg-linear-to-b from-accent-500 to-accent-600",
                                 "shadow-[inset_0_1px_0_rgb(255_255_255/0.24)] transition-[filter] duration-150 ease",
                                 (isDragging || isFocused) && "brightness-110",
                               )}
@@ -187,4 +213,45 @@ export function Slider({ thumbLabel = "Value", ...props }: SliderProps) {
 /** A two-thumb slider for selecting a minimum and maximum value. */
 export function RangeSlider({ thumbLabels = ["Minimum", "Maximum"], ...props }: RangeSliderProps) {
   return <SliderBase {...props} thumbLabels={thumbLabels} />;
+}
+
+/** Paint follows the same spring for the fill and marker; hit targets never move. */
+function FieldTrack({
+  start,
+  end,
+  disabled,
+  label,
+  value,
+  children,
+}: {
+  start: number;
+  end: number;
+  disabled: boolean;
+  label: ReactNode;
+  value: ReactNode;
+  children: ReactNode;
+}) {
+  const motion = useFieldMotion(start, end, disabled);
+  return (
+    <AriaSliderTrack
+      {...motion}
+      data-disabled={disabled || undefined}
+      className="control-height field-slider relative h-8 w-full touch-none rounded-lg outline-none"
+    >
+      <span
+        aria-hidden
+        className="field-slider-surface pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-border-button-default bg-background-primary-default"
+      >
+        <span className="field-slider-fill absolute inset-y-0 bg-background-secondary-default" />
+        <span className="field-slider-marker absolute inset-y-0 w-px bg-foreground-icon-tertiary" />
+      </span>
+      {children}
+      <span className="pointer-events-none absolute inset-0 flex items-center justify-between gap-2 px-2">
+        <AriaLabel className="text-body-2-regular text-text-secondary">{label}</AriaLabel>
+        <span aria-hidden className="text-body-2-medium tabular-nums text-text-primary">
+          {value}
+        </span>
+      </span>
+    </AriaSliderTrack>
+  );
 }

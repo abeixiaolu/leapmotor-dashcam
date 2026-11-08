@@ -1,3 +1,4 @@
+@reference "./styles/globals.css";
 /* App-specific surfaces that sit outside BoardUI primitives (player mosaic). */
 
 .app-pages,
@@ -15,7 +16,7 @@
   display: grid;
   gap: 6px;
   padding: 6px;
-  background: #0b1217;
+  background: var(--color-camera-surface);
 }
 
 .mosaic-grid .camera {
@@ -23,8 +24,8 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border-radius: 8px;
-  background: #111b21;
+  border-radius: 4px;
+  background: var(--color-camera-surface);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -64,13 +65,13 @@
   inset: 0;
   z-index: 1;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   background: transparent;
   padding: 0;
 }
 
 .camera-select:hover {
-  background: rgb(255 255 255 / 0.03);
+  background: var(--color-camera-hover);
 }
 
 .mosaic-grid .camera-top {
@@ -83,7 +84,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #edf4f0;
+  color: var(--color-camera-foreground);
 }
 
 .mosaic-grid .camera-top > span {
@@ -91,15 +92,15 @@
   align-items: center;
   gap: 6px;
   padding: 4px 7px;
-  border-radius: 6px;
-  background: rgb(20 33 39 / 0.55);
-  font-size: 11px;
+  border-radius: 4px;
+  background: var(--color-camera-overlay);
+  @apply text-caption-1-regular;
 }
 
 .mosaic-grid .camera-top small {
-  color: #c1d2cc;
+  color: var(--color-camera-muted);
   letter-spacing: 0.04em;
-  font-size: 10px;
+  @apply text-caption-2-regular;
 }
 
 .mosaic-grid .camera-top button {
@@ -114,16 +115,16 @@
   min-width: 36px;
   min-height: 36px;
   padding: 0;
-  border: 1px solid rgb(120 180 140 / 0.28);
-  border-radius: 8px;
-  background: rgb(18 36 28 / 0.78);
+  border: 1px solid var(--color-camera-border);
+  border-radius: 4px;
+  background: var(--color-camera-overlay);
   color: var(--color-accent-100);
   line-height: 0;
 }
 
 .mosaic-grid .camera-top button:hover {
-  background: rgb(24 52 38 / 0.88);
-  border-color: rgb(120 180 140 / 0.45);
+  background: var(--color-camera-overlay);
+  border-color: var(--color-camera-border);
 }
 
 .mosaic-grid .camera-top button svg {
@@ -140,10 +141,10 @@
   bottom: 10px;
   min-height: 30px;
   padding: 5px 9px;
-  border-radius: 6px;
-  background: rgb(21 37 27 / 0.72);
-  color: #d9e9e1;
-  font-size: 11px;
+  border-radius: 4px;
+  background: var(--color-camera-overlay);
+  color: var(--color-camera-foreground);
+  @apply text-caption-1-regular;
 }
 
 .mosaic-grid.layout-focus .camera:not(.is-primary) .camera-top {
@@ -157,175 +158,43 @@
   display: none;
 }
 
-/* Whole-player stage fullscreen (all cameras keep layout) */
-.mosaic-grid.is-stage-fullscreen {
+/* Keep the shared controls inside the fullscreen element, including while clips load. */
+.player.is-stage-fullscreen {
   position: fixed;
   inset: 0;
   z-index: 100;
-  width: 100vw;
-  height: 100dvh;
-  max-height: 100dvh;
-  aspect-ratio: auto !important;
-  border-radius: 0;
-  padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
-    max(72px, calc(env(safe-area-inset-bottom) + 64px)) max(8px, env(safe-area-inset-left));
-  background: #080d10;
-  box-sizing: border-box;
-}
-
-.mosaic-grid.is-stage-fullscreen.layout-focus {
-  grid-template-columns: minmax(0, 1fr) minmax(120px, 22%);
-  grid-template-rows: repeat(3, minmax(0, 1fr));
-}
-
-.mosaic-grid.is-stage-fullscreen.layout-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-}
-
-.mosaic-grid.is-stage-fullscreen .camera-select {
-  z-index: 2;
-}
-
-.mosaic-grid.is-stage-fullscreen .camera-top {
-  top: max(10px, env(safe-area-inset-top));
-  left: max(10px, env(safe-area-inset-left));
-  right: max(10px, env(safe-area-inset-right));
-}
-
-.fullscreen-transport {
-  position: fixed;
-  z-index: 110;
-  bottom: max(12px, env(safe-area-inset-bottom));
-  left: max(12px, env(safe-area-inset-left));
-  right: max(12px, env(safe-area-inset-right));
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 56px;
-  padding: 8px 12px;
-  border: 1px solid rgb(120 180 140 / 0.22);
-  border-radius: 12px;
-  background: rgb(14 28 22 / 0.92);
-  backdrop-filter: blur(12px);
-  color: #d6e3dc;
-  font-variant-numeric: tabular-nums;
-  box-sizing: border-box;
-}
-
-.fullscreen-transport button {
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: var(--color-accent-500);
-  color: white;
-  line-height: 0;
-}
-
-.fullscreen-transport button svg {
-  display: block;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-.fullscreen-transport .fs-secondary-btn {
-  width: auto;
-  min-width: 3.25rem;
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 999px;
-  border: 1px solid rgb(120 180 140 / 0.28);
-  background: rgb(18 36 28 / 0.88);
-  color: var(--color-accent-100);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.fullscreen-transport > span {
-  flex: 0 0 auto;
-  min-width: 4.75ch;
-  margin: 0;
-  padding: 0;
-  color: #d6e3dc;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.fullscreen-transport input[type="range"] {
-  appearance: none;
-  flex: 1 1 auto;
-  align-self: center;
   width: 100%;
-  min-width: 0;
-  height: 44px;
-  margin: 0;
-  padding: 0;
-  background: transparent;
-  accent-color: var(--color-accent-500);
-  cursor: pointer;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
 }
-
-.fullscreen-transport input[type="range"]::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.18);
+.player.is-stage-fullscreen > .mosaic-grid,
+.player.is-stage-fullscreen > .player-placeholder {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  aspect-ratio: auto;
 }
-
-.fullscreen-transport input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 16px;
-  height: 16px;
-  margin-top: -6px;
-  border: 2px solid var(--color-accent-100);
-  border-radius: 50%;
-  background: var(--color-accent-400);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.28);
-}
-
-.fullscreen-transport input[type="range"]::-moz-range-track {
-  height: 4px;
-  border: 0;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 0.18);
-}
-
-.fullscreen-transport input[type="range"]::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--color-accent-100);
-  border-radius: 50%;
-  background: var(--color-accent-400);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.28);
+.player.is-stage-fullscreen > .transport {
+  flex-shrink: 0;
 }
 
 .transport .timeline-slider .control-slider-track,
 .transport .timeline-slider [class*="bg-background-tertiary"] {
-  background: #445159 !important;
+  background: var(--color-background-tertiary-default) !important;
 }
 
 .transport-icon-btn {
   background: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
-  color: #d5e0e6 !important;
+  color: var(--color-text-secondary) !important;
 }
 
 .transport-icon-btn:hover:not(:disabled) {
-  background: rgb(255 255 255 / 0.06) !important;
+  background: var(--color-background-secondary-hover) !important;
 }
 
 .play-fab {
@@ -335,7 +204,7 @@
 /* Recording calendar (shared by modal) */
 .recording-calendar {
   border: 1px solid var(--color-separator-border);
-  border-radius: 12px;
+  border-radius: 4px;
   background: var(--color-background-primary-default);
   padding: 10px;
 }
@@ -347,8 +216,7 @@
 }
 
 .calendar-heading strong {
-  font-size: 14px;
-  font-weight: 600;
+  @apply text-body-2-medium;
 }
 
 .calendar-heading button {
@@ -357,8 +225,8 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  min-width: 40px;
-  min-height: 40px;
+  min-width: 32px;
+  min-height: 32px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -381,11 +249,11 @@
 .calendar-week {
   margin: 8px 0;
   color: var(--color-text-tertiary);
-  font-size: 12px;
+  @apply text-caption-1-regular;
 }
 
 .calendar-days > span {
-  min-height: 44px;
+  min-height: 32px;
 }
 
 .calendar-days button {
@@ -395,13 +263,13 @@
   justify-content: center;
   box-sizing: border-box;
   width: 100%;
-  min-width: 40px;
-  min-height: 44px;
+  min-width: 32px;
+  min-height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   color: var(--color-text-primary);
-  font-size: 13px;
+  @apply text-body-2-regular;
   line-height: 1;
 }
 
@@ -418,7 +286,7 @@
 
 .calendar-days button.selected {
   background: var(--color-accent-600);
-  color: white;
+  color: var(--color-text-white);
 }
 
 .calendar-days button i {
@@ -428,7 +296,7 @@
   width: 4px;
   height: 4px;
   margin: 0;
-  border-radius: 50%;
+  border-radius: 4px;
   background: currentColor;
   transform: translateX(-50%);
   pointer-events: none;
@@ -440,7 +308,7 @@
   gap: 6px;
   margin: 10px 0 2px;
   color: var(--color-text-tertiary);
-  font-size: 12px;
+  @apply text-caption-1-regular;
 }
 
 .recording-calendar > p > span {
@@ -451,7 +319,7 @@
   display: inline-block;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: 4px;
   background: var(--color-accent-500);
 }
 
@@ -535,16 +403,13 @@
     height: max(150px, calc(100dvh - 148px));
   }
 
-  .detail-correction .correction-body {
-    display: none;
+  .player-placeholder {
+    min-height: max(150px, calc(100dvh - 148px));
+    padding-block: 1rem;
   }
 
   .transport {
     padding-block: 6px !important;
-  }
-
-  .transport-status {
-    display: flex !important;
   }
 }
 
@@ -571,4 +436,81 @@
   .scanning-btn svg {
     animation: none !important;
   }
+}
+
+/* Controls retain their original positions and behavior. */
+.transport-icon-btn:disabled {
+  opacity: 0.35;
+}
+.app-shell .transport .timeline-slider {
+  min-width: 0;
+}
+
+/* Both drawers use the same fixed, comfortably spaced mobile header. */
+.drawer-panel-header {
+  padding: 1.5rem 1.25rem 1rem;
+  border-bottom: 1px solid var(--color-separator-border);
+}
+.drawer-panel-header > button {
+  width: 2rem;
+  height: 2rem;
+  margin-block-start: -0.5rem;
+  margin-inline-end: 0;
+}
+.drawer-panel-header > div {
+  padding-inline-end: 0.5rem;
+}
+
+/* Product-wide shape, including portal surfaces and component pseudo-elements. */
+:root body *,
+:root body *::before,
+:root body *::after {
+  border-radius: 4px !important;
+}
+
+/* Shared outer height for interactive controls, including portal content.
+   Content rows and camera hit areas keep their content-sized geometry. */
+:root {
+  --control-height: 32px;
+}
+:root .control-height,
+.calendar-heading button,
+.calendar-days button {
+  box-sizing: border-box;
+  height: var(--control-height);
+  min-height: var(--control-height);
+  max-height: var(--control-height);
+  padding-block: 0;
+  flex-shrink: 0;
+}
+:root .control-square {
+  width: var(--control-height);
+  min-width: var(--control-height);
+  padding-inline: 0;
+}
+
+/* A grouped control is 32px overall; its selected segment sits inside the inset. */
+:root .segmented-control-inset {
+  padding-block: 2px;
+}
+.segmented-control-item {
+  box-sizing: border-box;
+  height: var(--control-height);
+  min-height: 0;
+  flex-shrink: 0;
+}
+.segmented-control-inset > .segmented-control-item {
+  height: calc(var(--control-height) - 4px);
+}
+/* Embedded actions belong inside the input shell, not edge-to-edge on it. */
+:root .input-control .control-height {
+  --control-height: 24px;
+}
+
+/* Keep icon-swap opacity animations on the glyphs, and dim their wrapper. */
+.control-height svg:not(.t-icon),
+.segmented-control-item > svg,
+.control-height .t-icon-swap,
+.calendar-heading button > svg {
+  opacity: 0.66;
 }

@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { SearchField as AriaSearchField } from "react-aria-components";
 import type { SearchFieldProps as AriaSearchFieldProps } from "react-aria-components";
-import { RiSearchLine } from "@remixicon/react";
+import { default as RiSearchLine } from "@carbon/icons-react/es/Search.js";
 import { CloseButton } from "@/components/base/buttons/close-button";
 import { HintText } from "@/components/base/input/hint-text";
 import { InputBase } from "@/components/base/input/input";
@@ -111,11 +111,11 @@ export function SearchField({
             fieldClassName={cx(shape === "pill" && "rounded-full", fieldClassName)}
             className="[&::-webkit-search-cancel-button]:hidden"
             leadingAddon={
-              // The icon and the light share one 20px box and cross-fade.
-              <span aria-hidden className="relative ms-1 size-5 shrink-0">
+              // The icon and the light share one 16px box and cross-fade.
+              <span aria-hidden className="relative ms-1 size-4 shrink-0">
                 <Icon
                   className={cx(
-                    "absolute inset-0 size-5 transition-[opacity,scale] duration-200 ease-out",
+                    "absolute inset-0 size-4 transition-[opacity,scale] duration-200 ease-out",
                     isLoading && "scale-75 opacity-0",
                   )}
                 />

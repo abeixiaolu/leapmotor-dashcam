@@ -24,7 +24,7 @@ import type {
   DialogTriggerProps,
   ModalOverlayProps,
 } from "react-aria-components";
-import { RiErrorWarningLine } from "@remixicon/react";
+import { default as RiErrorWarningLine } from "@carbon/icons-react/es/WarningAlt.js";
 import { Button } from "@/components/base/buttons/button";
 import { CloseButton } from "@/components/base/buttons/close-button";
 import { SpinnerGlyph } from "@/components/base/spinner/spinner";

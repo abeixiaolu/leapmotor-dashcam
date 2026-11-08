@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode, Ref } from "react";
-import { RiInformationFill } from "@remixicon/react";
+import { default as RiInformationFill } from "@carbon/icons-react/es/InformationFilled.js";
 import type { LabelProps as AriaLabelProps } from "react-aria-components";
 import { Label as AriaLabel } from "react-aria-components";
 import { cx } from "@/utils/cx";

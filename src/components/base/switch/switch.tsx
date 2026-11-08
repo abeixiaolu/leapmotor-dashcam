@@ -62,13 +62,13 @@ export const switchSizes = sortCx({
     chipRadius: { pill: "rounded-full", rectangle: "rounded-[0.75px]" },
   },
   lg: {
-    track: "h-8 w-14",
+    track: "h-6 w-10",
     trackRadius: { pill: "rounded-full", rectangle: "rounded-md" },
     onShadow: "shadow-checkbox-selected",
-    thumb: "size-6",
+    thumb: "size-5",
     thumbRadius: { pill: "rounded-full", rectangle: "rounded-xs" },
-    offset: "start-1 top-1",
-    travel: "translate-x-6 rtl:-translate-x-6",
+    offset: "start-0.5 top-0.5",
+    travel: "translate-x-4 rtl:-translate-x-4",
     chip: "size-[10px] border-[0.5px] shadow-[0_4px_4px_0_rgb(0_0_0/0.03)]",
     chipRadius: { pill: "rounded-full", rectangle: "rounded-[1px]" },
   },
@@ -162,7 +162,7 @@ export function Switch({
       {...props}
       className={(state) =>
         cx(
-          "group inline-flex items-center gap-2 select-none",
+          "control-height group inline-flex items-center gap-2 select-none",
           state.isDisabled ? "cursor-not-allowed" : "cursor-pointer",
           typeof className === "function" ? className(state) : className,
         )

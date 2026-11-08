@@ -1,4 +1,9 @@
-import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  createHashHistory,
+} from "@tanstack/react-router";
 import App from "./App";
 
 const rootRoute = createRootRoute({ component: App });
@@ -9,6 +14,7 @@ const recordingRoute = createRoute({
 });
 
 export const router = createRouter({
+  history: createHashHistory(),
   routeTree: rootRoute.addChildren([indexRoute, recordingRoute]),
 });
 

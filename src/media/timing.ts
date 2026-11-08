@@ -1,5 +1,3 @@
-import { createReadStream } from "node:fs";
-
 export type RecordedTiming = {
   fpsNumerator: number;
   fpsDenominator: number;
@@ -7,7 +5,7 @@ export type RecordedTiming = {
   duration: number;
   timing: "recorded";
 };
-const UUID = Buffer.from("04020304050607080910111213141516", "hex");
+const UUID = new Uint8Array([4, 2, 3, 4, 5, 6, 7, 8, 9, 16, 17, 18, 19, 20, 21, 22]);
 
 /** Leapmotor type-5 SEI: UUID + 28 bytes metadata + LE uint64 epoch milliseconds. */
 function timestampFromSei(bytes: number[]): number | undefined {
@@ -16,7 +14,7 @@ function timestampFromSei(bytes: number[]): number | undefined {
     if (i >= 2 && bytes[i] === 3 && bytes[i - 1] === 0 && bytes[i - 2] === 0) continue;
     rbsp.push(bytes[i]!);
   }
-  const b = Buffer.from(rbsp);
+  const b = new Uint8Array(rbsp);
   let p = 1;
   while (p < b.length) {
     if (b[p] === 0x80 && p === b.length - 1) break;
@@ -35,8 +33,8 @@ function timestampFromSei(bytes: number[]): number | undefined {
     if (p >= b.length) return undefined;
     size += b[p++]!;
     if (p + size > b.length) return undefined;
-    if (type === 5 && size >= 52 && b.subarray(p, p + 16).equals(UUID)) {
-      const stamp = Number(b.readBigUInt64LE(p + 44));
+    if (type === 5 && size >= 52 && UUID.every((value, index) => b[p + index] === value)) {
+      const stamp = Number(new DataView(b.buffer).getBigUint64(p + 44, true));
       if (stamp >= 946684800000 && stamp <= 4102444800000) return stamp;
     }
     p += size;
@@ -117,8 +115,4 @@ export async function scanRecordingTiming(
     duration: milliseconds / 1000,
     timing: "recorded",
   };
-}
-
-export function readRecordingTiming(path: string): Promise<RecordedTiming | undefined> {
-  return scanRecordingTiming(createReadStream(path, { highWaterMark: 256 * 1024 }));
 }

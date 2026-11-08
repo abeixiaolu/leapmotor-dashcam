@@ -168,7 +168,7 @@ export function PillTab({
       data-pill-variant={variant}
       onClick={onSelect}
       className={cx(
-        "group relative z-10 flex shrink-0 cursor-pointer items-center gap-1 px-2 py-[5px]",
+        "control-height group relative z-10 flex shrink-0 cursor-pointer items-center gap-1 px-2 py-[5px]",
         styles.radius[variant],
         "outline-none transition-colors duration-150 ease",
         "focus-visible:ring-2 focus-visible:ring-border-focus-ring",

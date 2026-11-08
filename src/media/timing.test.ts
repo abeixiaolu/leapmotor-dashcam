@@ -1,12 +1,24 @@
 import { describe, expect, it } from "vite-plus/test";
 import { scanRecordingTiming } from "./timing";
+function concat(chunks: Uint8Array[]) {
+  const result = new Uint8Array(chunks.reduce((size, chunk) => size + chunk.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
 function sei(stamp: number, uuid = "04020304050607080910111213141516") {
-  const raw = Buffer.alloc(56);
+  const raw = new Uint8Array(56);
   raw[0] = 6;
   raw[1] = 5;
   raw[2] = 52;
-  Buffer.from(uuid, "hex").copy(raw, 3);
-  raw.writeBigUInt64LE(BigInt(stamp), 47);
+  raw.set(
+    Uint8Array.from(uuid.match(/../g)!, (hex) => parseInt(hex, 16)),
+    3,
+  );
+  new DataView(raw.buffer).setBigUint64(47, BigInt(stamp), true);
   raw[55] = 128;
   const escaped: number[] = [];
   let zeros = 0;
@@ -18,16 +30,16 @@ function sei(stamp: number, uuid = "04020304050607080910111213141516") {
     escaped.push(b);
     zeros = b === 0 ? zeros + 1 : 0;
   }
-  return Buffer.from([0, 0, 0, 1, ...escaped]);
+  return new Uint8Array([0, 0, 0, 1, ...escaped]);
 }
-async function* chunks(buffer: Buffer, size = 3) {
+async function* chunks(buffer: Uint8Array, size = 3) {
   for (let i = 0; i < buffer.length; i += size) yield buffer.subarray(i, i + size);
 }
 describe("Leapmotor SEI timing", () => {
   it("reads frame timestamps across split start codes and emulation prevention", async () => {
     const base = 1794040414941;
     const result = await scanRecordingTiming(
-      chunks(Buffer.concat([sei(base), sei(base + 40), sei(base + 82), sei(base + 122)])),
+      chunks(concat([sei(base), sei(base + 40), sei(base + 82), sei(base + 122)])),
     );
     expect(result).toEqual({
       fpsNumerator: 4000,
@@ -39,18 +51,18 @@ describe("Leapmotor SEI timing", () => {
   });
   it("ignores unrelated SEI and large video slice payloads", async () => {
     const base = 1794040414941;
-    const stream = Buffer.concat([
+    const stream = concat([
       sei(base, "11111111111111111111111111111111"),
       sei(base),
-      Buffer.from([0, 0, 1, 65]),
-      Buffer.alloc(200000, 99),
+      new Uint8Array([0, 0, 1, 65]),
+      new Uint8Array(200000).fill(99),
       sei(base + 40),
     ]);
     expect((await scanRecordingTiming(chunks(stream, 65536)))?.frameCount).toBe(2);
   });
   it("rejects backwards time and incomplete metadata", async () => {
     expect(
-      await scanRecordingTiming(chunks(Buffer.concat([sei(1794040414941), sei(1794040414901)]))),
+      await scanRecordingTiming(chunks(concat([sei(1794040414941), sei(1794040414901)]))),
     ).toBeUndefined();
     expect(await scanRecordingTiming(chunks(sei(1794040414941).subarray(0, 20)))).toBeUndefined();
   });

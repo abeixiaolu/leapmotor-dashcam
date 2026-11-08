@@ -45,7 +45,7 @@ export interface IconLinkButtonProps extends Omit<
 
 const styles = sortCx({
   base: [
-    "relative inline-flex shrink-0 items-center justify-center overflow-visible rounded-2lg",
+    "control-height control-square motion-control relative inline-flex shrink-0 items-center justify-center overflow-visible rounded-2lg",
     "bg-background-primary-default text-foreground-icon-primary",
     "border border-border-button-default shadow-xs",
     "select-none cursor-pointer",
@@ -60,7 +60,7 @@ const styles = sortCx({
     small: "size-8",
   },
   icon: {
-    medium: "size-5 shrink-0",
+    medium: "size-4 shrink-0",
     small: "size-4 shrink-0",
   },
 });

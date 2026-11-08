@@ -61,6 +61,7 @@ export interface SelectProps<T extends object> extends Omit<AriaSelectProps<T>, 
   triggerClassName?: string;
   /** Classes for the open popover (e.g. constrain its width). */
   popoverClassName?: string;
+  portalContainer?: Element;
   /** `md` (default) or `sm` for compact/dense contexts (e.g. compact tables). */
   size?: SelectSize;
   children: ReactNode;
@@ -76,6 +77,7 @@ export function Select<T extends object>({
   className,
   triggerClassName,
   popoverClassName,
+  portalContainer,
   size = "md",
   children,
   items,
@@ -112,7 +114,7 @@ export function Select<T extends object>({
           <AriaButton
             ref={triggerRef}
             className={cx(
-              "flex w-full cursor-pointer items-center justify-between rounded-2lg",
+              "control-height flex w-full cursor-pointer items-center justify-between rounded-2lg",
               "border border-border-button-default bg-background-primary-default shadow-xs",
               "text-text-primary",
               "transition-[background-color,border-color,box-shadow,padding,font-size] duration-200 ease",
@@ -143,6 +145,7 @@ export function Select<T extends object>({
           </AriaButton>
           <AriaPopover
             ref={popoverRef}
+            UNSTABLE_portalContainer={portalContainer}
             isNonModal
             offset={4}
             className={cx(
@@ -178,6 +181,7 @@ export function SelectItem({ className, children, ...props }: SelectItemProps) {
       {...props}
       className={(state) =>
         cx(
+          "control-height",
           MENU_ITEM,
           size === "sm" ? "px-2 py-1.5 text-body-2-medium" : "text-body-medium",
           (state.isFocused || state.isSelected) && MENU_ITEM_ACTIVE,

@@ -1,3 +1,4 @@
+import { MotionText } from "@/components/Motion";
 import { Select, SelectItem } from "@/components/base/select/select";
 import { Slider } from "@/components/base/slider/slider";
 import { Switch } from "@/components/base/switch/switch";
@@ -43,12 +44,15 @@ export function PlayerSlider({
 export function PlaybackSpeed({
   value,
   onChange,
+  portalContainer,
 }: {
+  portalContainer?: Element;
   value: number;
   onChange: (value: number) => void;
 }) {
   return (
     <Select
+      portalContainer={portalContainer}
       aria-label="播放倍速"
       selectedKey={String(value)}
       onSelectionChange={(key) => {
@@ -56,9 +60,9 @@ export function PlaybackSpeed({
       }}
       size="sm"
       className="w-auto"
-      triggerClassName="min-w-[7.5rem] bg-neutral-800! border-neutral-600! text-neutral-100! shadow-none hover:bg-neutral-700! hover:border-neutral-500!"
+      triggerClassName="min-w-28 bg-background-secondary-default! border-border-button-default! text-text-primary! shadow-none hover:bg-background-secondary-hover!"
       popoverClassName="z-[160]"
-      renderValue={() => `${value}× 倍速`}
+      renderValue={() => <MotionText>{`${value}× 倍速`}</MotionText>}
     >
       {[0.25, 0.5, 1, 1.5, 2, 4].map((rate) => (
         <SelectItem key={rate} id={String(rate)} textValue={`${rate}× 倍速`}>

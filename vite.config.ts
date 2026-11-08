@@ -2,11 +2,13 @@ import { defineConfig } from "vite-plus";
 
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { usbPlugin } from "./server/usb";
 
 export default defineConfig({
   resolve: { alias: { "@": new URL("./src", import.meta.url).pathname } },
-  plugins: [react(), tailwindcss(), usbPlugin()],
+  base: "./",
+  plugins: [react(), tailwindcss()],
+  optimizeDeps: { exclude: ["@ffmpeg/ffmpeg", "@ffmpeg/core"] },
+  worker: { format: "es" },
   server: { host: "127.0.0.1" },
   preview: { host: "127.0.0.1" },
   staged: {

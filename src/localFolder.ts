@@ -71,7 +71,7 @@ const kindFromPath = (path: string): "drive" | "sentinel" | undefined => {
 
 const volumeNameFromPath = (path: string): string => {
   const parts = path.replace(/\\/g, "/").split("/").filter(Boolean);
-  if (!parts.length) return "已选文件夹";
+  if (parts.length < 2) return "已选录像文件";
   const marker = parts.findIndex((p) => /^(driverecord|sentinel)$/i.test(p));
   if (marker > 0) return parts[marker - 1] || "已选文件夹";
   return parts[0] || "已选文件夹";
@@ -473,7 +473,7 @@ export async function buildDriveFromFiles(files: File[]): Promise<{
     if (!files.length) {
       if (isLikelyMobileSafari() && !iosDirectoryUploadLikelySupported()) {
         throw new Error(
-          "当前 iOS 低于 18.4，Safari 还不能用「选择文件夹」授权整个目录。请改用「多选录像文件」，在「文件」里进入 U 盘的 driverecord，多选 .h264 后打开；或把 U 盘插在电脑上用自动扫描。",
+          "当前 iOS 低于 18.4，Safari 还不能用「选择文件夹」授权整个目录。请改用「多选录像文件」，在「文件」里进入 U 盘的 driverecord，多选 .h264 后打开。",
         );
       }
       throw new Error(
@@ -502,58 +502,4 @@ export async function buildDriveFromFiles(files: File[]): Promise<{
     },
     fileMap,
   };
-}
-
-export async function uploadLocalRecording(
-  id: string,
-  file: File,
-  onProgress?: (ratio: number) => void,
-): Promise<void> {
-  onProgress?.(0);
-  const response = await new Promise<Response>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", `/api/import/${encodeURIComponent(id)}`);
-    xhr.setRequestHeader("Content-Type", "application/octet-stream");
-    xhr.setRequestHeader("X-Recording-Name", encodeURIComponent(file.name));
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && event.total > 0) onProgress?.(event.loaded / event.total);
-    };
-    xhr.onload = () => {
-      resolve(
-        new Response(xhr.responseText, {
-          status: xhr.status,
-          statusText: xhr.statusText,
-          headers: { "Content-Type": xhr.getResponseHeader("Content-Type") || "application/json" },
-        }),
-      );
-    };
-    xhr.onerror = () =>
-      reject(new Error("上传录像失败，请确认手机与电脑在同一局域网，且开发服务仍在运行。"));
-    xhr.onabort = () => reject(new Error("上传已取消。"));
-    xhr.send(file);
-  });
-  if (!response.ok) {
-    let message = "上传录像失败。";
-    try {
-      const data = (await response.json()) as { error?: string };
-      if (data.error) message = data.error;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(message);
-  }
-  onProgress?.(1);
-}
-
-export function describeScanFailure(status: number, serverMessage?: string): string {
-  if (status === 403) {
-    return (
-      serverMessage ||
-      "当前页面不能自动读取电脑上的 U 盘。请点「选择文件夹」，在「文件」App 中打开 U 盘并授权；或把 U 盘插在运行本服务的电脑上后重试。"
-    );
-  }
-  if (status === 0 || status >= 500) {
-    return "无法连接本地读取服务，请确认电脑上的开发服务仍在运行，且手机与电脑同一 Wi‑Fi。";
-  }
-  return serverMessage || "本地读取服务暂时不可用。";
 }

@@ -109,8 +109,8 @@ export function SegmentedControl({
       {...props}
       className={(state) =>
         cx(
-          "relative inline-flex items-start gap-0.5 rounded-2lg",
-          variant === "solid" && "bg-segmented-control-background p-1",
+          "control-height segmented-control relative inline-flex items-center gap-0.5 rounded-2lg",
+          variant === "solid" && "segmented-control-inset bg-segmented-control-background p-0.5",
           typeof className === "function" ? className(state) : className,
         )
       }
@@ -148,7 +148,7 @@ export function SegmentedControlItem({
       {...props}
       className={(state) =>
         cx(
-          "relative z-10 inline-flex cursor-pointer items-center justify-center rounded-md px-2.5 py-1 text-center whitespace-nowrap",
+          "segmented-control-item relative z-10 inline-flex cursor-pointer items-center justify-center rounded-md px-2 py-0 text-center whitespace-nowrap",
           "transition-colors duration-200 ease",
           "outline-none focus-visible:ring-2 focus-visible:ring-border-focus-ring",
           state.isSelected
