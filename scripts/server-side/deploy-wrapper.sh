@@ -17,6 +17,10 @@
 
 set -euo pipefail
 
+# 加载共享指纹计算逻辑
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../lib/fingerprint.sh"
+
 DEPLOY_PATH="/srv/dashcam"
 RELEASES_DIR="${DEPLOY_PATH}/releases"
 CURRENT_LINK="${DEPLOY_PATH}/current"
@@ -169,6 +173,11 @@ validate_extracted() {
         return 1
     fi
     
+    if [[ ! -f "${extract_dir}/health.json" ]]; then
+        log_error "缺少 health.json"
+        return 1
+    fi
+    
     # 验证 REVISION 格式（40 字符十六进制）
     local revision
     revision=$(grep '^REVISION=' "${extract_dir}/build-manifest.txt" | cut -d= -f2)
@@ -266,12 +275,12 @@ validate_extracted() {
         local rel_path
         rel_path=$(realpath --relative-to="${extract_dir}" "$file" | sed 's|^\./||')
         
-        # 跳过 build-manifest.txt 和 health.json（health.json 仅作元数据，不参与指纹）
-        if [[ "$rel_path" == "build-manifest.txt" ]] || [[ "$rel_path" == "health.json" ]]; then
+        # 跳过 build-manifest.txt 本身
+        if [[ "$rel_path" == "build-manifest.txt" ]]; then
             continue
         fi
         
-        # 检查是否在已验证列表中
+        # 检查是否在已验证列表中（health.json 也必须在清单中）
         local found=false
         for verified in "${verified_files[@]}"; do
             if [[ "$rel_path" == "$verified" ]]; then
@@ -284,7 +293,7 @@ validate_extracted() {
             log_error "发现额外文件（不在清单中）: $rel_path"
             return 1
         fi
-    done < <(find "${extract_dir}" -type f ! -name build-manifest.txt ! -name health.json)
+    done < <(find "${extract_dir}" -type f ! -name build-manifest.txt)
     
     log_info "内容验证通过: ${file_count} 个文件"
     echo "$revision"
@@ -312,17 +321,12 @@ validate_path_safety() {
     return 0
 }
 
-# 生成版本名称（排除 health.json 行，与 CI 一致）
+# 生成版本名称（使用共享指纹逻辑）
 generate_release_name() {
     local revision="$1"
     local manifest_file="$2"
     
-    # 排除 health.json 的清单行，计算指纹
-    local fingerprint
-    fingerprint=$(grep -v '^[0-9a-f]\{64\}  health\.json$' "$manifest_file" | sha256sum | cut -c1-8)
-    
-    local release_name="${revision:0:8}-${fingerprint}"
-    echo "$release_name"
+    generate_version_name "$revision" "$manifest_file"
 }
 
 # 安装到 release 目录（幂等，不可变）
@@ -433,27 +437,50 @@ health_check() {
         return 1
     fi
     
-    # 检查健康端点 metadata
-    if [[ -f "${current_path}/health.json" ]]; then
-        if ! grep -q '"status".*"ok"' "${current_path}/health.json"; then
-            log_error "健康端点状态异常"
-            return 1
-        fi
-        
-        # 验证 revision
-        if ! grep -q "\"revision\".*\"${expected_revision}\"" "${current_path}/health.json"; then
-            log_error "健康端点 revision 不匹配"
-            return 1
-        fi
-        
-        # 验证 version
-        if ! grep -q "\"version\".*\"${expected_version}\"" "${current_path}/health.json"; then
-            log_error "健康端点 version 不匹配"
-            return 1
-        fi
-        
-        log_info "健康端点 metadata 验证通过"
+    # 检查 health.json（必须存在）
+    if [[ ! -f "${current_path}/health.json" ]]; then
+        log_error "health.json 不存在"
+        return 1
     fi
+    
+    # 验证 health.json 状态
+    if ! grep -q '"status".*"ok"' "${current_path}/health.json"; then
+        log_error "健康端点状态异常"
+        return 1
+    fi
+    
+    # 验证 revision
+    if ! grep -q "\"revision\".*\"${expected_revision}\"" "${current_path}/health.json"; then
+        log_error "健康端点 revision 不匹配"
+        return 1
+    fi
+    
+    # 验证 version
+    if ! grep -q "\"version\".*\"${expected_version}\"" "${current_path}/health.json"; then
+        log_error "健康端点 version 不匹配"
+        return 1
+    fi
+    
+    # 验证 health.json SHA256（与清单一致）
+    local manifest_file="${current_path}/../$(basename "$current_path")/build-manifest.txt"
+    if [[ -f "$manifest_file" ]]; then
+        local expected_health_sha
+        expected_health_sha=$(grep '^[0-9a-f]\{64\}  health\.json$' "$manifest_file" | awk '{print $1}')
+        
+        if [[ -n "$expected_health_sha" ]]; then
+            local actual_health_sha
+            actual_health_sha=$(sha256sum "${current_path}/health.json" | awk '{print $1}')
+            
+            if [[ "$actual_health_sha" != "$expected_health_sha" ]]; then
+                log_error "health.json SHA256 不匹配"
+                log_error "  期望: $expected_health_sha"
+                log_error "  实际: $actual_health_sha"
+                return 1
+            fi
+        fi
+    fi
+    
+    log_info "健康端点 metadata 验证通过"
     
     log_info "健康检查通过"
 }

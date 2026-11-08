@@ -6,6 +6,10 @@
 
 set -euo pipefail
 
+# 加载共享指纹计算逻辑
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/lib/fingerprint.sh"
+
 # 配置变量（从环境变量读取）
 DEPLOY_USER="${DEPLOY_USER:-}"
 DEPLOY_HOST="${DEPLOY_HOST:-}"
@@ -206,10 +210,11 @@ main() {
     
     # 部署到服务器
     if deploy_to_server "${package_file}"; then
-        # 计算期望的版本名（与服务器端逻辑一致）
-        local expected_fingerprint
-        expected_fingerprint=$(sha256sum "${MANIFEST_FILE}" | cut -c1-8)
-        local expected_version="${REVISION:0:8}-${expected_fingerprint}"
+        # 计算期望的版本名（使用共享指纹逻辑）
+        local expected_version
+        expected_version=$(generate_version_name "$REVISION" "${MANIFEST_FILE}")
+        
+        log_info "期望版本: ${expected_version}"
         
         # 验证部署
         verify_deployment "$expected_version"

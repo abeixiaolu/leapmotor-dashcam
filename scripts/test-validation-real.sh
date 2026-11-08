@@ -45,6 +45,7 @@ create_valid_package() {
     echo '<html><body>Test</body></html>' > "$dir/index.html"
     mkdir -p "$dir/assets"
     echo 'body {}' > "$dir/assets/style.css"
+    echo '{"status":"ok","service":"dashcam","version":"test","revision":"test","buildTime":"test"}' > "$dir/health.json"
     
     (
         cd "$dir"
