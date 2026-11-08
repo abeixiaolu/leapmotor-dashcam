@@ -36,6 +36,8 @@ import {
   buildDriveFromFiles,
   iosDirectoryUploadLikelySupported,
   isLikelyMobileSafari,
+  isIPhoneBrowser,
+  IPHONE_RECORDING_LIMIT,
   pickDirectoryFiles,
   pickRecordingFiles,
 } from "./localFolder";
@@ -52,6 +54,7 @@ export type Drive = { id: string; name: string; recordings: Recording[] };
 const DESKTOP_MQ = "(min-width: 768px) and (min-height: 600px)";
 
 export default function App() {
+  const [iPhoneMode] = useState(isIPhoneBrowser);
   const [drives, setDrives] = useState<Drive[]>([]),
     [driveId, setDriveId] = useState(""),
     [listSelected, setSelected] = useState(""),
@@ -81,8 +84,8 @@ export default function App() {
   const [pickProgress, setPickProgress] = useState("");
   const localFilesRef = useRef<Map<string, File>>(new Map());
   const manualSourceRef = useRef(false);
-  const [initialScan, setInitialScan] = useState(() =>
-    /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname),
+  const [initialScan, setInitialScan] = useState(
+    () => !iPhoneMode && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname),
   );
   const autoRecordingsRef = useRef(new Map<string, Recording>());
   const playerRef = useRef<HTMLDivElement>(null);
@@ -180,17 +183,23 @@ export default function App() {
     setPicking(false);
     setPickProgress("");
     setScanError(
-      "已取消选择。请再点「选择文件夹」或「多选录像文件」，在「文件」中打开 U 盘后授权。",
+      iPhoneMode
+        ? `已取消等待。请重新选择最多 ${IPHONE_RECORDING_LIMIT} 段录像。系统已开始的文件导入可能仍在继续。`
+        : "已取消等待。Safari 已开始的系统复制可能仍在继续。可重新选择目录，或用「多选录像文件」缩小读取范围。",
     );
-  }, []);
+  }, [iPhoneMode]);
   const applyPickedFiles = useCallback(
     async (files: File[], gen: number, ac: AbortController) => {
       if (gen !== pickGenRef.current || ac.signal.aborted) return;
       if (!files.length) {
         setPickProgress("");
-        if (isLikelyMobileSafari() && !iosDirectoryUploadLikelySupported()) {
+        if (iPhoneMode) {
           setScanError(
-            "未读到文件。当前 iOS 低于 18.4 时，Safari「选择文件夹」往往无法授权整个目录。请点「多选录像文件」，在「文件」进入 U 盘 driverecord 多选 .h264。",
+            `未读到录像。请进入 U 盘，逐个勾选 1–${IPHONE_RECORDING_LIMIT} 个 .h264 文件后点「打开」。`,
+          );
+        } else if (isLikelyMobileSafari() && !iosDirectoryUploadLikelySupported()) {
+          setScanError(
+            "未读到文件。iOS 18.4 起支持选择整个目录。请升级系统，或点「多选录像文件」，在「文件」进入 U 盘 driverecord 多选 .h264。",
           );
         } else {
           setScanError(
@@ -212,12 +221,13 @@ export default function App() {
       setSelectedDate("");
       void navigate({ to: "/" });
     },
-    [navigate],
+    [navigate, iPhoneMode],
   );
 
   const beginPick = useCallback(
-    (mode: "directory" | "files") => {
-      // While picking: shared buttons become「取消选择」— abort live waiter, do not open another sheet.
+    (requestedMode: "directory" | "files") => {
+      const mode = iPhoneMode ? "files" : requestedMode;
+      // While picking, cancel the live waiter instead of opening another sheet.
       if (picking) {
         cancelFolderPick();
         return;
@@ -226,7 +236,13 @@ export default function App() {
       const ac = new AbortController();
       pickAbortRef.current = ac;
       setPicking(true);
-      setPickProgress(mode === "files" ? "等待选择录像文件…" : "等待选择文件夹…");
+      setPickProgress(
+        mode === "files"
+          ? iPhoneMode
+            ? `请逐个勾选 1–${IPHONE_RECORDING_LIMIT} 段录像，请勿全选。点「打开」后自动整理。`
+            : "请选择录像文件，完成后自动整理。"
+          : "请进入 U 盘或录像文件夹，点「打开」后自动整理。大目录可能需要较长时间。",
+      );
       setScanError("");
 
       const finish = async (files: File[]) => {
@@ -248,7 +264,11 @@ export default function App() {
       const waitOpts = {
         onReturn: () => {
           if (gen !== pickGenRef.current || ac.signal.aborted) return;
-          setPickProgress(mode === "files" ? "正在读取所选文件…" : "正在读取所选文件夹…");
+          setPickProgress(
+            mode === "files"
+              ? "正在等待系统交回所选文件，可取消等待。"
+              : "正在等待系统交回所选目录。iPhone 可能需要复制目录，请保持 U 盘连接；可取消等待。",
+          );
         },
       };
 
@@ -265,10 +285,11 @@ export default function App() {
         if (pickAbortRef.current === ac) pickAbortRef.current = null;
       });
     },
-    [picking, cancelFolderPick, applyPickedFiles],
+    [picking, cancelFolderPick, applyPickedFiles, iPhoneMode],
   );
 
   useEffect(() => {
+    if (iPhoneMode) return;
     if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -311,7 +332,7 @@ export default function App() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, []);
+  }, [iPhoneMode]);
 
   const autoAvailable =
     drives.some((drive) => drive.recordings.some((recording) => recording.id === selected)) &&
@@ -362,8 +383,7 @@ export default function App() {
             );
           localFile = new File([await response.blob()], autoRecording.name);
         }
-        if (!localFile)
-          throw new Error("请重新选择包含这段录像的文件夹。刷新页面后需要重新授权读取。");
+        if (!localFile) throw new Error("请重新选择这段录像文件。刷新页面后需要重新授权读取。");
         const { prepareRecording } = await import("./media/prepare");
         controller.signal.throwIfAborted();
         const blob = await prepareRecording(localFile, controller.signal, (text) => {
@@ -450,8 +470,9 @@ export default function App() {
       setSelectedDate(next);
     },
     onChoose: choose,
-    onPickFolder: pickFolder,
+    onPickFolder: iPhoneMode ? undefined : pickFolder,
     onPickFiles: pickFiles,
+    fileSelectionLimit: iPhoneMode ? IPHONE_RECORDING_LIMIT : undefined,
     picking,
     pickProgress,
     onHelp: () => setHelp(true),
@@ -601,7 +622,9 @@ export default function App() {
                       ? error
                       : page === "list"
                         ? "按日期或时间找到录像，一次查看前、后、左、右四路影像。"
-                        : "请打开录像列表，选择 U 盘文件夹或录像文件。"}
+                        : iPhoneMode
+                          ? `请打开录像列表，选择最多 ${IPHONE_RECORDING_LIMIT} 段录像。`
+                          : "请打开录像列表，选择 U 盘文件夹或录像文件。"}
                 </p>
                 {page === "list" && (
                   <Button
@@ -728,7 +751,11 @@ export default function App() {
         onChange={setSettings}
         saved={settingsSaved}
       />
-      <HelpDialog open={help} onClose={() => setHelp(false)} />
+      <HelpDialog
+        open={help}
+        onClose={() => setHelp(false)}
+        fileSelectionLimit={iPhoneMode ? IPHONE_RECORDING_LIMIT : undefined}
+      />
     </div>
   );
 }

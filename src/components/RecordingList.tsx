@@ -37,7 +37,8 @@ type Props = {
   pickProgress?: string;
   onDate: (date: string) => void;
   onChoose: (id: string) => void;
-  onPickFolder: () => void;
+  onPickFolder?: () => void;
+  fileSelectionLimit?: number;
   /** Multi-select fallback for browsers without directory access. */
   onPickFiles?: () => void;
   onHelp: () => void;
@@ -98,15 +99,17 @@ export function RecordingList(p: Props) {
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button
-                  size="small"
-                  variant="secondary"
-                  leadingIcon={FolderOpen}
-                  className="flex-1 shadow-none"
-                  onClick={p.onPickFolder}
-                >
-                  {p.picking ? "取消选择" : "选择文件夹"}
-                </Button>
+                {p.onPickFolder && (
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    leadingIcon={FolderOpen}
+                    className="flex-1 shadow-none"
+                    onClick={p.onPickFolder}
+                  >
+                    {p.picking ? "取消等待" : "选择 U 盘/文件夹"}
+                  </Button>
+                )}
                 {p.onPickFiles && (
                   <Button
                     size="small"
@@ -115,16 +118,29 @@ export function RecordingList(p: Props) {
                     className="w-full shadow-none"
                     onClick={p.onPickFiles}
                   >
-                    {p.picking ? "取消选择" : "多选录像文件"}
+                    {p.picking
+                      ? "取消等待"
+                      : p.fileSelectionLimit
+                        ? `多选录像（最多 ${p.fileSelectionLimit} 段）`
+                        : "多选录像文件"}
                   </Button>
                 )}
               </div>
+              {p.fileSelectionLimit && (
+                <p className="text-caption-1-regular text-text-secondary">
+                  iPhone 每次最多选择 {p.fileSelectionLimit} 段 .h264
+                  录像。请逐个勾选，请勿全选；不支持导入文件夹。
+                </p>
+              )}
               {p.picking && (
                 <p
                   className="motion-enter text-caption-1-regular text-text-secondary"
                   role="status"
                 >
-                  {p.pickProgress || "请在系统选择器中选择 U 盘或录像文件夹。"}
+                  {p.pickProgress ||
+                    (p.fileSelectionLimit
+                      ? `请在 U 盘中选择最多 ${p.fileSelectionLimit} 段录像。`
+                      : "请在系统选择器中选择 U 盘或录像文件夹。")}
                 </p>
               )}
               {p.scanError && (
@@ -271,21 +287,25 @@ export function RecordingList(p: Props) {
                 <p className="max-w-xs text-caption-1-regular text-text-tertiary">
                   {p.drive
                     ? "试试其他日期或录像分类。"
-                    : p.onPickFiles
-                      ? "在「文件」中打开 U 盘，选择整个盘或 driverecord 文件夹。"
-                      : "选择 U 盘或本机录像文件夹，文件不会上传。"}
+                    : p.fileSelectionLimit
+                      ? `在「浏览」中进入 U 盘的录像目录，逐个勾选 1–${p.fileSelectionLimit} 个 .h264 文件后点「打开」。`
+                      : p.onPickFiles
+                        ? "在「浏览」中进入 U 盘或录像文件夹，点右上角「打开」，即可自动整理其中的录像。"
+                        : "选择 U 盘或本机录像文件夹，文件不会上传。"}
                 </p>
                 {!p.drive && !p.picking && (
                   <>
-                    <Button
-                      variant="secondary"
-                      size="small"
-                      leadingIcon={FolderOpen}
-                      className="shadow-none"
-                      onClick={p.onPickFolder}
-                    >
-                      {p.picking ? "取消选择" : "选择 U 盘/文件夹"}
-                    </Button>
+                    {p.onPickFolder && (
+                      <Button
+                        variant="secondary"
+                        size="small"
+                        leadingIcon={FolderOpen}
+                        className="shadow-none"
+                        onClick={p.onPickFolder}
+                      >
+                        选择 U 盘/文件夹
+                      </Button>
+                    )}
                     {p.onPickFiles && !p.picking && (
                       <Button
                         variant="secondary"
@@ -294,7 +314,9 @@ export function RecordingList(p: Props) {
                         className="shadow-none"
                         onClick={p.onPickFiles}
                       >
-                        多选录像文件
+                        {p.fileSelectionLimit
+                          ? `多选录像（最多 ${p.fileSelectionLimit} 段）`
+                          : "多选录像文件"}
                       </Button>
                     )}
                   </>

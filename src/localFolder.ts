@@ -1,4 +1,6 @@
-/** Client-side U 盘 / 文件夹选择（iOS Safari 走 webkitdirectory / 文件 App）。 */
+/** Client-side U 盘选择；iPhone 仅允许少量文件，其他设备支持文件夹。 */
+
+export const IPHONE_RECORDING_LIMIT = 10;
 
 export type LocalRecording = {
   id: string;
@@ -86,6 +88,26 @@ export function isLikelyMobileSafari(): boolean {
   return iOS;
 }
 
+export function isIPhoneBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iPhone/i.test(navigator.userAgent || "") || /^iPhone$/i.test(navigator.platform || "");
+}
+
+const iPhoneDirectoryMessage = `iPhone 上已停用文件夹导入。请选择录像文件，每次最多 ${IPHONE_RECORDING_LIMIT} 个。`;
+
+/** Enforce the iPhone limit before indexing, hashing, or reading file content. */
+export function validateRecordingSelection(files: File[]): void {
+  if (!isIPhoneBrowser()) return;
+  if (files.length > IPHONE_RECORDING_LIMIT) {
+    throw new Error(
+      `iPhone 每次最多选择 ${IPHONE_RECORDING_LIMIT} 个文件，本次选择了 ${files.length} 个。请减少数量后重新选择。`,
+    );
+  }
+  if (files.some((file) => file.webkitRelativePath)) {
+    throw new Error(iPhoneDirectoryMessage);
+  }
+}
+
 /** iOS gained real webkitdirectory folder grants in 18.4 (WebKit 271705). */
 export function iosDirectoryUploadLikelySupported(): boolean {
   if (!isLikelyMobileSafari()) return true;
@@ -153,15 +175,13 @@ async function pickWithShowDirectoryPicker(): Promise<File[]> {
 }
 
 /**
- * iOS Safari quirks for <input type=file> (esp. webkitdirectory):
- * - Files.app often opens as a sheet: visibility may stay "visible", no pagehide
- * - `change` / `cancel` often do NOT fire after the sheet dismisses
- * - FileList may populate late, or stay empty (pre-iOS 18.4 directory upload, USB grant fail)
- * - focus can fire immediately after input.click() — must grace-ignore
- * - requiring leftForPicker===true before empty-settle caused the「等待选择文件夹…」hang
+ * iOS may copy a selected USB directory before returning its FileList. The page
+ * can regain focus while that work is still running, and large directories can
+ * take minutes. Neither focus nor elapsed time proves cancellation.
  *
- * Strategy: poll FileList; after a post-click grace, any return signal schedules empty settle;
- * AbortSignal tears down; shorter mobile watchdog with a clear empty result (never infinite wait).
+ * Keep the input alive until files arrive, the picker reports change/cancel, or
+ * the user explicitly cancels through AbortSignal / abortDirectoryPick. Polling
+ * also handles browsers that populate FileList without dispatching change.
  */
 let activeWebkitPickAbort: AbortController | null = null;
 
@@ -176,10 +196,8 @@ export function abortDirectoryPick(): void {
 }
 
 type WaitOpts = {
-  /** Fires after post-click grace when the page looks interactive again (sheet dismissed). */
+  /** Fires after post-click grace when the page looks interactive again. */
   onReturn?: () => void;
-  watchdogMs?: number;
-  emptySettleMs?: number;
   graceMs?: number;
 };
 
@@ -198,17 +216,11 @@ function attachInputWaiter(
   }
 
   const graceMs = opts.graceMs ?? 900;
-  // iPhone: FileList may stay empty for seconds while WebKit walks a USB folder.
-  // Too-short empty settle reintroduces a false「未读到文件」; too-long feels hung.
-  const emptySettleMs = opts.emptySettleMs ?? (isLikelyMobileSafari() ? 12_000 : 2_200);
-  const watchdogMs = opts.watchdogMs ?? (isLikelyMobileSafari() ? 90_000 : 180_000);
   const openedAt = Date.now();
 
   return new Promise((resolve) => {
     let settled = false;
     let returnNotified = false;
-    let emptySettleTimer: ReturnType<typeof setTimeout> | undefined;
-    let watchdog: ReturnType<typeof setTimeout> | undefined;
     let pollTimer: ReturnType<typeof setInterval> | undefined;
 
     const readFiles = (): File[] => (input.files ? Array.from(input.files) : []);
@@ -219,14 +231,11 @@ function attachInputWaiter(
       input.removeEventListener("change", onChange);
       input.removeEventListener("cancel", onCancel);
       input.removeEventListener("input", onChange);
-      window.removeEventListener("focus", onWindowFocus);
-      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("focus", onReturn);
+      window.removeEventListener("pageshow", onReturn);
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("pagehide", onPageHide);
-      window.removeEventListener("pointerdown", onUserReentry, true);
-      window.removeEventListener("touchstart", onUserReentry, true);
-      if (emptySettleTimer) clearTimeout(emptySettleTimer);
-      if (watchdog) clearTimeout(watchdog);
+      window.removeEventListener("pointerdown", onReturn, true);
+      window.removeEventListener("touchstart", onReturn, true);
       if (pollTimer) clearInterval(pollTimer);
       if (activeWebkitPickAbort === localAbort) activeWebkitPickAbort = null;
       if (removeInputOnSettle) {
@@ -265,15 +274,6 @@ function attachInputWaiter(
 
     const pastGrace = () => Date.now() - openedAt >= graceMs;
 
-    const scheduleEmptySettle = (ms: number) => {
-      if (settled) return;
-      if (emptySettleTimer) clearTimeout(emptySettleTimer);
-      emptySettleTimer = setTimeout(() => {
-        if (settled) return;
-        settle(readFiles());
-      }, ms);
-    };
-
     const tryRead = () => {
       if (settled) return;
       const files = readFiles();
@@ -297,35 +297,16 @@ function attachInputWaiter(
       }
     };
 
-    // Soft return (focus/pageshow): iOS may focus-flicker while Files sheet is still open.
-    // Only update UI + poll; use a long empty timer so we don't abort mid-browse.
-    const onSoftReturn = () => {
+    // Return signals update progress, but cannot distinguish copying from cancellation.
+    const onReturn = () => {
       if (settled || !pastGrace()) return;
       notifyReturn();
       tryRead();
-      scheduleEmptySettle(Math.max(emptySettleMs, 45_000));
     };
-
-    // Hard return: user touched our page again → sheet is gone. Empty-settle sooner.
-    // (Previous hang: we required visibility===hidden, which iPhone Files sheet never sets.)
-    const onHardReturn = () => {
-      if (settled || !pastGrace()) return;
-      notifyReturn();
-      tryRead();
-      scheduleEmptySettle(emptySettleMs);
-    };
-
-    const onWindowFocus = () => onSoftReturn();
-    const onPageShow = () => onSoftReturn();
-    const onUserReentry = () => onHardReturn();
 
     const onVisibility = () => {
       if (document.visibilityState === "hidden") return;
-      onSoftReturn();
-    };
-
-    const onPageHide = () => {
-      /* some builds pagehide when opening Files; pageshow/focus handle return */
+      onReturn();
     };
 
     localAbort.signal.addEventListener("abort", onAbort);
@@ -333,20 +314,14 @@ function attachInputWaiter(
     input.addEventListener("change", onChange);
     input.addEventListener("input", onChange);
     input.addEventListener("cancel", onCancel);
-    window.addEventListener("focus", onWindowFocus);
-    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("focus", onReturn);
+    window.addEventListener("pageshow", onReturn);
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("pagehide", onPageHide);
     // iOS: sheet dismiss + tap back into Safari may not focus/visibility-change
-    window.addEventListener("pointerdown", onUserReentry, true);
-    window.addEventListener("touchstart", onUserReentry, true);
+    window.addEventListener("pointerdown", onReturn, true);
+    window.addEventListener("touchstart", onReturn, true);
 
     pollTimer = setInterval(tryRead, 200);
-
-    watchdog = setTimeout(() => {
-      if (settled) return;
-      settle(readFiles());
-    }, watchdogMs);
   });
 }
 
@@ -414,7 +389,10 @@ function pickWithWebkitDirectory(
 
 /** Multi-select files (no webkitdirectory) — iOS Files can pick .h264 from USB this way. */
 export function pickRecordingFiles(signal?: AbortSignal, waitOpts?: WaitOpts): Promise<File[]> {
-  return pickWithFileInput(false, signal, waitOpts);
+  return pickWithFileInput(false, signal, waitOpts).then((files) => {
+    validateRecordingSelection(files);
+    return files;
+  });
 }
 
 /**
@@ -427,11 +405,11 @@ export function waitForInputFiles(input: HTMLInputElement, signal?: AbortSignal)
 
 /**
  * Open a directory picker. IMPORTANT: the webkitdirectory path must click()
- * synchronously inside the user-gesture turn — do not mark this `async`
- * (an async function defers the body to a microtask and iOS Safari drops the gesture).
+ * synchronously inside the user-gesture turn — do not await before opening it.
  */
 export function pickDirectoryFiles(signal?: AbortSignal, waitOpts?: WaitOpts): Promise<File[]> {
   if (signal?.aborted) return Promise.resolve([]);
+  if (isIPhoneBrowser()) return Promise.reject(new Error(iPhoneDirectoryMessage));
   if (supportsDirectoryPicker()) {
     return pickWithShowDirectoryPicker().catch(() => pickWithWebkitDirectory(signal, waitOpts));
   }
@@ -442,6 +420,7 @@ export async function buildDriveFromFiles(files: File[]): Promise<{
   drive: LocalDrive;
   fileMap: Map<string, File>;
 }> {
+  validateRecordingSelection(files);
   const recordings: LocalRecording[] = [];
   let h264Count = 0;
   for (const file of files) {
@@ -471,6 +450,11 @@ export async function buildDriveFromFiles(files: File[]): Promise<{
       throw new Error("找到了 .h264 文件，但大小为 0，无法播放。请确认 U 盘已正确挂载后重试。");
     }
     if (!files.length) {
+      if (isIPhoneBrowser()) {
+        throw new Error(
+          `未读到任何文件。请从 U 盘选择录像文件，每次最多 ${IPHONE_RECORDING_LIMIT} 个。`,
+        );
+      }
       if (isLikelyMobileSafari() && !iosDirectoryUploadLikelySupported()) {
         throw new Error(
           "当前 iOS 低于 18.4，Safari 还不能用「选择文件夹」授权整个目录。请改用「多选录像文件」，在「文件」里进入 U 盘的 driverecord，多选 .h264 后打开。",
@@ -479,6 +463,9 @@ export async function buildDriveFromFiles(files: File[]): Promise<{
       throw new Error(
         "未读到任何文件。请在「文件」中打开 U 盘（常见名「NO NAME」），选择整个 U 盘或 driverecord 目录后点「打开」；若仍不行，点「多选录像文件」直接选 .h264。",
       );
+    }
+    if (isIPhoneBrowser()) {
+      throw new Error(`已选择 ${files.length} 个文件，但未找到零跑录像。请选择 .h264 文件。`);
     }
     throw new Error(
       `已选择 ${files.length} 个文件，但未找到零跑录像（需要 .h264）。请选择整个 U 盘或包含 driverecord / sentinel 的文件夹。`,

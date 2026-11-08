@@ -4,6 +4,7 @@ import { cx } from "@/utils/cx";
 import { directions, labels } from "./library";
 import type { Direction } from "./library";
 import { quadrants } from "./mosaicMath";
+import { playbackErrorMessage } from "./media/playbackError";
 
 type Props = {
   src: string;
@@ -241,7 +242,7 @@ export function MosaicPlayer(p: Props) {
         style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
         onLoadedMetadata={(e) => p.onDuration(e.currentTarget.duration)}
         onEnded={() => p.onPlaying(false)}
-        onError={() => p.onError("视频解码失败，请重新载入片段。")}
+        onError={(event) => p.onError(playbackErrorMessage(event.currentTarget.error))}
       />
       {directions.map((d) => (
         <section key={d} className={cx("camera", `camera-${d}`, p.primary === d && "is-primary")}>

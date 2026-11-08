@@ -2,25 +2,48 @@ import { default as RiShieldCheckLine } from "@carbon/icons-react/es/Security.js
 import { Button } from "@/components/base/buttons/button";
 import { Modal, ModalBody, ModalFooter, ModalHeader } from "@/components/base/modal/modal";
 
-export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function HelpDialog({
+  open,
+  onClose,
+  fileSelectionLimit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  fileSelectionLimit?: number;
+}) {
   return (
     <Modal isOpen={open} onOpenChange={(next) => !next && onClose()} size="lg">
       {({ close }) => (
         <>
           <ModalHeader
-            title="选择录像文件夹，开始本地回放。"
+            title={
+              fileSelectionLimit ? "选择少量录像，开始本地回放。" : "选择录像文件夹，开始本地回放。"
+            }
             description="使用指南"
             icon={RiShieldCheckLine}
           />
           <ModalBody>
             <ol className="ms-5 list-decimal space-y-5 text-body-regular text-text-secondary">
               <li>
-                <p className="text-body-medium text-text-primary">选择 U 盘或录像文件</p>
-                <p className="mt-1">
-                  点击「选择文件夹」，在系统文件选择器中打开 U 盘，选择整个盘或 driverecord /
-                  sentinel 文件夹。也可以「多选录像文件」直接打开 .h264。
-                  刷新或重新打开网页后，需要重新选择文件授权读取。
+                <p className="text-body-medium text-text-primary">
+                  {fileSelectionLimit
+                    ? `每次最多 ${fileSelectionLimit} 段录像`
+                    : "选择 U 盘或录像文件"}
                 </p>
+                {fileSelectionLimit ? (
+                  <p className="mt-1">
+                    点击「多选录像」，在「浏览」中进入 U 盘的 driverecord 或 sentinel 目录，
+                    逐个勾选 1–{fileSelectionLimit} 个 .h264 文件后点「打开」，请勿全选。 iPhone
+                    不提供文件夹导入；超过上限会拒绝本次选择，请重新选择。
+                    每次选择会替换当前列表，刷新后需要重新选择。没有目录信息的录像默认归为行车。
+                  </p>
+                ) : (
+                  <p className="mt-1">
+                    点击「选择 U 盘/文件夹」，在系统文件选择器的「浏览」中进入 U 盘，
+                    点右上角「打开」。网页会自动整理所选目录及子目录中的行车与哨兵录像，
+                    无需逐个选择文件。刷新或重新打开网页后，需要重新选择。
+                  </p>
+                )}
               </li>
               <li>
                 <p className="text-body-medium text-text-primary">一大三小，自由切换</p>

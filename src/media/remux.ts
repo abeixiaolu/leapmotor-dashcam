@@ -23,7 +23,12 @@ export function remuxArguments(numerator: number, denominator: number) {
     "-c:v",
     "copy",
     "-bsf:v",
-    `setts=time_base=1/${numerator}:ts=N*${denominator}:duration=${denominator}`,
+    // Normalize the SPS as well as MP4 timestamps. Recorder streams can signal
+    // Level 6.0 even when their dimensions/rate only require Level 5.0, which
+    // can make hardware decoders reject an otherwise supported video.
+    // Progressive H.264 uses two timing ticks per frame. Set timing before
+    // automatic level detection so a malformed raw tick rate cannot inflate it.
+    `h264_metadata=tick_rate=${2 * numerator}/${denominator}:level=auto,setts=time_base=1/${numerator}:ts=N*${denominator}:duration=${denominator}`,
     "-video_track_timescale",
     String(numerator),
     "-movflags",

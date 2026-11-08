@@ -20,7 +20,7 @@ const createCore = require("@ffmpeg/core") as (options: {
   wasmBinary: Uint8Array;
 }) => Promise<Core>;
 
-it("browser WASM preserves pixels and corrects malformed raw timing without native FFmpeg", async () => {
+it("browser WASM corrects raw SPS timing and level while preserving pixels and duration", async () => {
   vi.stubGlobal("self", { location: { href: "http://localhost/ffmpeg-core.js" } });
   const core = await createCore({
     wasmBinary: await readFile(require.resolve("@ffmpeg/core/wasm")),
@@ -46,7 +46,7 @@ it("browser WASM preserves pixels and corrects malformed raw timing without nati
     "-bf",
     "0",
     "-bsf:v",
-    "h264_metadata=tick_rate=2400000/1",
+    "h264_metadata=tick_rate=2400000/1:level=60",
     "-f",
     "h264",
     "/input/recording.h264",
@@ -57,7 +57,7 @@ it("browser WASM preserves pixels and corrects malformed raw timing without nati
     "error",
     "-count_frames",
     "-show_entries",
-    "stream=nb_read_frames,avg_frame_rate:format=duration",
+    "stream=nb_read_frames,avg_frame_rate,level:format=duration",
     "-of",
     "json",
     "output.mp4",
@@ -67,7 +67,50 @@ it("browser WASM preserves pixels and corrects malformed raw timing without nati
   core.reset();
   const probe = JSON.parse(core.FS.readFile("probe.json", { encoding: "utf8" }));
   expect(Number(probe.format.duration)).toBe(2);
-  expect(probe.streams[0]).toMatchObject({ nb_read_frames: "50", avg_frame_rate: "25/1" });
+  expect(probe.streams[0]).toMatchObject({
+    nb_read_frames: "50",
+    avg_frame_rate: "25/1",
+    level: 10,
+  });
+  const probeRaw = (input: string, output: string) => {
+    core.ffprobe(
+      "-v",
+      "error",
+      "-show_entries",
+      "stream=r_frame_rate,level",
+      "-of",
+      "json",
+      input,
+      "-o",
+      output,
+    );
+    core.reset();
+    return JSON.parse(core.FS.readFile(output, { encoding: "utf8" })).streams[0];
+  };
+  expect(probeRaw("/input/recording.h264", "source.json")).toMatchObject({
+    r_frame_rate: "1200000/1",
+    level: 60,
+  });
+  const extractRaw = () => {
+    exec([
+      "-i",
+      "output.mp4",
+      "-c:v",
+      "copy",
+      "-bsf:v",
+      "h264_mp4toannexb",
+      "-f",
+      "h264",
+      "normalized.h264",
+    ]);
+  };
+  // Inspect the elementary stream: container-only timestamp corrections cannot
+  // satisfy this assertion, because the original SPS would still be malformed.
+  extractRaw();
+  expect(probeRaw("normalized.h264", "normalized.json")).toMatchObject({
+    r_frame_rate: "25/1",
+    level: 10,
+  });
   for (const [input, output] of [
     ["/input/recording.h264", "before.txt"],
     ["output.mp4", "after.txt"],
@@ -97,6 +140,11 @@ it("browser WASM preserves pixels and corrects malformed raw timing without nati
   const measured = JSON.parse(core.FS.readFile("measured.json", { encoding: "utf8" }));
   expect(Number(measured.format.duration)).toBe(2.05);
   expect(Number(measured.streams[0].nb_read_packets)).toBe(50);
+  extractRaw();
+  expect(probeRaw("normalized.h264", "measured-raw.json")).toMatchObject({
+    r_frame_rate: "1000/41",
+    level: 10,
+  });
 }, 30000);
 
 it("uses measured timing only when timestamps match the packet count", () => {
