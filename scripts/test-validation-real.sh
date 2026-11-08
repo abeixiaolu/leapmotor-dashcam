@@ -92,18 +92,22 @@ test_path_injection() {
     mkdir -p "$test_pkg"
     
     echo "malicious" > "$test_pkg/index.html"
+    echo '{"status":"ok","service":"dashcam","version":"test","revision":"test","buildTime":"test"}' > "$test_pkg/health.json"
     
     (
         cd "$test_pkg"
-        sha256sum index.html > build-manifest.txt
+        sha256sum index.html health.json > build-manifest.txt
         echo "fake_sha ../../etc/passwd" >> build-manifest.txt
         echo "REVISION=0123456789abcdef0123456789abcdef01234567" >> build-manifest.txt
     )
     
-    if validate_extracted "$test_pkg" 2>&1 >/dev/null; then
-        log_fail "路径注入未被拒绝"
+    local output
+    output=$(validate_extracted "$test_pkg" 2>&1) || true
+    
+    if echo "$output" | grep -q "不安全的路径.*\.\./"; then
+        log_pass "路径注入被正确拒绝（检测到不安全路径）"
     else
-        log_pass "路径注入被正确拒绝"
+        log_fail "路径注入未被正确拒绝，输出: $output"
     fi
 }
 
@@ -166,18 +170,22 @@ test_symlink_after_extract() {
     mkdir -p "$test_pkg"
     
     echo "normal" > "$test_pkg/index.html"
+    echo '{"status":"ok","service":"dashcam","version":"test","revision":"test","buildTime":"test"}' > "$test_pkg/health.json"
     ln -s /etc/passwd "$test_pkg/evil-link"
     
     (
         cd "$test_pkg"
-        sha256sum index.html > build-manifest.txt
+        sha256sum index.html health.json > build-manifest.txt
         echo "REVISION=0123456789abcdef0123456789abcdef01234567" >> build-manifest.txt
     )
     
-    if validate_extracted "$test_pkg" 2>&1 >/dev/null; then
-        log_fail "提取后的软链接未被拒绝"
+    local output
+    output=$(validate_extracted "$test_pkg" 2>&1) || true
+    
+    if echo "$output" | grep -q "提取目录包含软链接"; then
+        log_pass "提取后的软链接被正确拒绝（检测到软链接）"
     else
-        log_pass "提取后的软链接被正确拒绝"
+        log_fail "提取后的软链接未被正确拒绝，输出: $output"
     fi
 }
 
@@ -189,19 +197,23 @@ test_sha_mismatch() {
     mkdir -p "$test_pkg"
     
     echo "original" > "$test_pkg/index.html"
+    echo '{"status":"ok","service":"dashcam","version":"test","revision":"test","buildTime":"test"}' > "$test_pkg/health.json"
     
     (
         cd "$test_pkg"
-        sha256sum index.html > build-manifest.txt
+        sha256sum index.html health.json > build-manifest.txt
         echo "REVISION=0123456789abcdef0123456789abcdef01234567" >> build-manifest.txt
     )
     
     echo "modified" > "$test_pkg/index.html"
     
-    if validate_extracted "$test_pkg" 2>&1 >/dev/null; then
-        log_fail "SHA256 不匹配未被检测"
+    local output
+    output=$(validate_extracted "$test_pkg" 2>&1) || true
+    
+    if echo "$output" | grep -q "SHA256 不匹配.*index\.html"; then
+        log_pass "SHA256 不匹配被正确检测（index.html）"
     else
-        log_pass "SHA256 不匹配被正确检测"
+        log_fail "SHA256 不匹配未被正确检测，输出: $output"
     fi
 }
 
@@ -213,18 +225,22 @@ test_extra_file() {
     mkdir -p "$test_pkg"
     
     echo "normal" > "$test_pkg/index.html"
+    echo '{"status":"ok","service":"dashcam","version":"test","revision":"test","buildTime":"test"}' > "$test_pkg/health.json"
     echo "backdoor" > "$test_pkg/evil.php"
     
     (
         cd "$test_pkg"
-        sha256sum index.html > build-manifest.txt
+        sha256sum index.html health.json > build-manifest.txt
         echo "REVISION=0123456789abcdef0123456789abcdef01234567" >> build-manifest.txt
     )
     
-    if validate_extracted "$test_pkg" 2>&1 >/dev/null; then
-        log_fail "额外文件未被检测"
+    local output
+    output=$(validate_extracted "$test_pkg" 2>&1) || true
+    
+    if echo "$output" | grep -q "发现额外文件.*evil\.php"; then
+        log_pass "额外文件被正确检测（evil.php）"
     else
-        log_pass "额外文件被正确检测"
+        log_fail "额外文件未被正确检测，输出: $output"
     fi
 }
 
@@ -236,17 +252,21 @@ test_invalid_revision() {
     mkdir -p "$test_pkg"
     
     echo "normal" > "$test_pkg/index.html"
+    echo '{"status":"ok","service":"dashcam","version":"test","revision":"test","buildTime":"test"}' > "$test_pkg/health.json"
     
     (
         cd "$test_pkg"
-        sha256sum index.html > build-manifest.txt
+        sha256sum index.html health.json > build-manifest.txt
         echo "REVISION=../../malicious" >> build-manifest.txt
     )
     
-    if validate_extracted "$test_pkg" 2>&1 >/dev/null; then
-        log_fail "无效 REVISION 未被拒绝"
+    local output
+    output=$(validate_extracted "$test_pkg" 2>&1) || true
+    
+    if echo "$output" | grep -q "REVISION 格式无效"; then
+        log_pass "无效 REVISION 被正确拒绝（格式无效）"
     else
-        log_pass "无效 REVISION 被正确拒绝"
+        log_fail "无效 REVISION 未被正确拒绝，输出: $output"
     fi
 }
 

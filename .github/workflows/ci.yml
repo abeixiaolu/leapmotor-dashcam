@@ -142,6 +142,7 @@ jobs:
         with:
           sparse-checkout: |
             scripts/deploy-via-wrapper.sh
+            scripts/lib/
           persist-credentials: false
       
       - name: Download build artifacts

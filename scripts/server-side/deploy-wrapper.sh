@@ -3,6 +3,7 @@
 # 服务器端部署包装脚本
 # 
 # 安装位置：/usr/local/bin/dashcam-deploy
+# 依赖库：/usr/local/lib/dashcam/fingerprint.sh
 # 权限：由 root 执行（通过 sudo）
 #
 # 严格安全边界：
@@ -17,9 +18,14 @@
 
 set -euo pipefail
 
-# 加载共享指纹计算逻辑
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/fingerprint.sh"
+# 加载共享指纹计算逻辑（优先使用系统安装路径，fallback 到仓库相对路径）
+if [[ -f "/usr/local/lib/dashcam/fingerprint.sh" ]]; then
+    source "/usr/local/lib/dashcam/fingerprint.sh"
+else
+    # 仓库布局: scripts/server-side/deploy-wrapper.sh 和 scripts/lib/fingerprint.sh
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    source "${SCRIPT_DIR}/../lib/fingerprint.sh"
+fi
 
 DEPLOY_PATH="/srv/dashcam"
 RELEASES_DIR="${DEPLOY_PATH}/releases"

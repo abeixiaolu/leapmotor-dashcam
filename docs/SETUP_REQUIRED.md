@@ -31,10 +31,10 @@ useradd -r -s /bin/bash -d /home/dashcam-deploy -m dashcam-deploy
 mkdir -p /var/tmp/dashcam-staging
 chmod 1777 /var/tmp/dashcam-staging
 
-# 安装部署脚本（从 PR 分支获取）
-cp deploy-wrapper.sh /usr/local/bin/dashcam-deploy
-chmod 755 /usr/local/bin/dashcam-deploy
-chown root:root /usr/local/bin/dashcam-deploy
+# 安装部署脚本和共享库（从 PR 分支获取）
+install -m 755 -o root -g root deploy-wrapper.sh /usr/local/bin/dashcam-deploy
+mkdir -p /usr/local/lib/dashcam
+install -m 644 -o root -g root fingerprint.sh /usr/local/lib/dashcam/fingerprint.sh
 
 # 配置 sudo
 visudo -f /etc/sudoers.d/dashcam-deploy

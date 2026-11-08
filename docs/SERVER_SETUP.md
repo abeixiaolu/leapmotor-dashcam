@@ -30,14 +30,37 @@ chmod 1777 /var/tmp/dashcam-staging
 
 ### 3. 安装部署脚本
 
-从 PR 分支获取 `scripts/server-side/deploy-wrapper.sh`：
+从 PR 分支获取脚本和共享库：
 
 ```bash
-# 复制脚本到服务器（使用 scp 或其他方式）
-# 然后安装
-cp deploy-wrapper.sh /usr/local/bin/dashcam-deploy
-chmod 755 /usr/local/bin/dashcam-deploy
-chown root:root /usr/local/bin/dashcam-deploy
+# 在本地仓库（PR 分支）
+git checkout cursor/github-actions-ci-cd-1347
+
+# 复制到服务器
+scp scripts/server-side/deploy-wrapper.sh root@124.223.96.15:/tmp/
+scp scripts/lib/fingerprint.sh root@124.223.96.15:/tmp/
+
+# 在服务器上安装
+ssh root@124.223.96.15 << 'EOF'
+# 安装主脚本
+install -m 755 -o root -g root /tmp/deploy-wrapper.sh /usr/local/bin/dashcam-deploy
+
+# 创建库目录并安装共享库
+mkdir -p /usr/local/lib/dashcam
+install -m 644 -o root -g root /tmp/fingerprint.sh /usr/local/lib/dashcam/fingerprint.sh
+
+# 清理临时文件
+rm /tmp/deploy-wrapper.sh /tmp/fingerprint.sh
+
+# 验证安装
+ls -la /usr/local/bin/dashcam-deploy /usr/local/lib/dashcam/fingerprint.sh
+EOF
+```
+
+**安装后的文件布局**：
+```
+/usr/local/bin/dashcam-deploy           # 主部署脚本（755, root:root）
+/usr/local/lib/dashcam/fingerprint.sh   # 共享指纹计算库（644, root:root）
 ```
 
 ### 4. 配置 sudo 权限
