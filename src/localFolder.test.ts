@@ -285,7 +285,7 @@ describe("file picker lifecycle", () => {
     expect(input.setAttribute).not.toHaveBeenCalledWith("directory", "");
     input.files = Array.from({ length: 11 }, (_, i) => recording(`${i}.h264`, ""));
     input.dispatchEvent(new Event("change"));
-    await expect(pending).rejects.toThrow("最多选择 10 个文件，本次选择了 11 个");
+    await expect(pending).rejects.toThrow("最多选择 1 个文件，本次选择了 11 个");
     await vi.runOnlyPendingTimersAsync();
     expect(input.remove).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
@@ -314,22 +314,20 @@ describe("iPhone recording limits", () => {
     expect(isIPhoneBrowser()).toBe(expected);
   });
 
-  it("accepts exactly 10 individually selected recordings", async () => {
+  it("accepts one individually selected recording", async () => {
     const files = Array.from({ length: IPHONE_RECORDING_LIMIT }, (_, i) =>
       recording(`${i}.h264`, ""),
     );
     const result = await buildDriveFromFiles(files);
-    expect(result.drive.recordings).toHaveLength(10);
-    expect(result.fileMap.size).toBe(10);
+    expect(result.drive.recordings).toHaveLength(1);
+    expect(result.fileMap.size).toBe(1);
   });
 
   it("rejects 11 selected files before hashing or reading any content", async () => {
     const files = Array.from({ length: 11 }, (_, i) => recording(`${i}.h264`, ""));
     const reads = files.map((file) => vi.spyOn(file, "arrayBuffer"));
     const digest = vi.spyOn(crypto.subtle, "digest");
-    await expect(buildDriveFromFiles(files)).rejects.toThrow(
-      "最多选择 10 个文件，本次选择了 11 个",
-    );
+    await expect(buildDriveFromFiles(files)).rejects.toThrow("最多选择 1 个文件，本次选择了 11 个");
     expect(digest).not.toHaveBeenCalled();
     for (const read of reads) expect(read).not.toHaveBeenCalled();
   });
@@ -342,16 +340,16 @@ describe("iPhone recording limits", () => {
     expect(digest).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ["desktop", "Macintosh", "MacIntel", 0],
-    ["iPad", "iPad", "iPad", 5],
-  ])("preserves unlimited directory indexing on %s", async (_label, userAgent, platform, touch) => {
-    vi.stubGlobal("navigator", { userAgent, platform, maxTouchPoints: touch });
-    const files = Array.from({ length: 11 }, (_, i) =>
-      recording(`${i}.h264`, `USB/sentinel/${i}.h264`),
-    );
-    const result = await buildDriveFromFiles(files);
-    expect(result.drive.recordings).toHaveLength(11);
-    expect(result.drive.recordings.every((file) => file.kind === "sentinel")).toBe(true);
-  });
+  it.each([["desktop", "Macintosh", "MacIntel", 0]])(
+    "preserves unlimited directory indexing on %s",
+    async (_label, userAgent, platform, touch) => {
+      vi.stubGlobal("navigator", { userAgent, platform, maxTouchPoints: touch });
+      const files = Array.from({ length: 11 }, (_, i) =>
+        recording(`${i}.h264`, `USB/sentinel/${i}.h264`),
+      );
+      const result = await buildDriveFromFiles(files);
+      expect(result.drive.recordings).toHaveLength(11);
+      expect(result.drive.recordings.every((file) => file.kind === "sentinel")).toBe(true);
+    },
+  );
 });

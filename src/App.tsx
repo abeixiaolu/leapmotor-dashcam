@@ -10,6 +10,10 @@ import { default as RiSkipBackFill } from "@carbon/icons-react/es/SkipBack.js";
 import { default as RiSkipForwardFill } from "@carbon/icons-react/es/SkipForward.js";
 import { default as RiForward10Fill } from "@carbon/icons-react/es/Forward_10.js";
 import { default as RiVideoLine } from "@carbon/icons-react/es/Video.js";
+import { Modal, ModalHeader, ModalBody } from "@/components/base/modal/modal";
+import type { ExportLayout } from "./media/exportLayout";
+import { labels } from "./library";
+import DownloadIcon from "@carbon/icons-react/es/Download.js";
 import { Button } from "@/components/base/buttons/button";
 import { IconButton } from "@/components/base/buttons/icon-button";
 import { Drawer, DrawerBody, DrawerHeader } from "@/components/base/drawer/drawer";
@@ -37,7 +41,7 @@ import {
   buildDriveFromFiles,
   iosDirectoryUploadLikelySupported,
   isLikelyMobileSafari,
-  isIPhoneBrowser,
+  isMobileBrowser,
   IPHONE_RECORDING_LIMIT,
   pickDirectoryFiles,
   pickRecordingFiles,
@@ -55,7 +59,7 @@ export type Drive = { id: string; name: string; recordings: Recording[] };
 const DESKTOP_MQ = "(min-width: 768px) and (min-height: 600px)";
 
 export default function App() {
-  const [iPhoneMode] = useState(isIPhoneBrowser);
+  const [iPhoneMode] = useState(isMobileBrowser);
   const [drives, setDrives] = useState<Drive[]>([]),
     [driveId, setDriveId] = useState(""),
     [listSelected, setSelected] = useState(""),
@@ -84,6 +88,56 @@ export default function App() {
   const [picking, setPicking] = useState(false);
   const [pickProgress, setPickProgress] = useState("");
   const [prepareProgress, setPrepareProgress] = useState("");
+  const preparedFileRef = useRef<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveHint, setSaveHint] = useState("");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportProgress, setExportProgress] = useState("");
+  const savingRef = useRef(false);
+  const saveVideo = async (exportLayout: ExportLayout) => {
+    const sourceFile = preparedFileRef.current;
+    const exportPrimary = primary;
+    if (!sourceFile || savingRef.current) return;
+    savingRef.current = true;
+    setExportOpen(false);
+    setSaving(true);
+    setSaveHint("");
+    try {
+      const { exportRecording } = await import("./media/export");
+      const file = await exportRecording({
+        file: sourceFile,
+        layout: exportLayout,
+        primary: exportPrimary,
+        onProgress: setExportProgress,
+      });
+      if (
+        iPhoneMode &&
+        navigator.userActivation?.isActive &&
+        navigator.canShare?.({ files: [file] })
+      ) {
+        await navigator.share({ files: [file], title: file.name });
+        setSaveHint("已交给系统处理，请在系统面板中选择保存位置。");
+      } else {
+        const url = URL.createObjectURL(file);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = file.name;
+        link.target = "_blank";
+        link.rel = "noopener";
+        document.body.append(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      }
+    } catch (cause) {
+      if (!(cause instanceof Error && cause.name === "AbortError"))
+        setSaveHint("保存失败，请重试或使用浏览器的下载功能。");
+    } finally {
+      savingRef.current = false;
+      setExportProgress("");
+      setSaving(false);
+    }
+  };
   const localFilesRef = useRef<Map<string, File>>(new Map());
   const manualSourceRef = useRef(false);
   const [initialScan, setInitialScan] = useState(
@@ -217,7 +271,7 @@ export default function App() {
         setPickProgress("");
         if (iPhoneMode) {
           setScanError(
-            `未读到录像。请进入 U 盘，逐个勾选 1–${IPHONE_RECORDING_LIMIT} 个 .h264 文件后点「打开」。`,
+            `未读到录像。请进入 U 盘，选择 ${IPHONE_RECORDING_LIMIT} 个 .h264 文件后点「打开」。`,
           );
         } else if (isLikelyMobileSafari() && !iosDirectoryUploadLikelySupported()) {
           setScanError(
@@ -239,8 +293,26 @@ export default function App() {
       });
       if (gen !== pickGenRef.current || ac.signal.aborted) return;
       manualSourceRef.current = true;
-      localFilesRef.current = fileMap;
-      setDrives([drive]);
+      localFilesRef.current = iPhoneMode
+        ? new Map([...localFilesRef.current, ...fileMap])
+        : fileMap;
+      if (iPhoneMode) {
+        drive.id = "mobile-recordings";
+        setDrives((previous) => [
+          {
+            ...drive,
+            recordings: [
+              ...new Map(
+                [...previous.flatMap((item) => item.recordings), ...drive.recordings].map(
+                  (recording) => [recording.id, recording],
+                ),
+              ).values(),
+            ].sort((a, b) => b.stamp.localeCompare(a.stamp)),
+          },
+        ]);
+      } else {
+        setDrives([drive]);
+      }
       setDriveId(drive.id);
       setKind(drive.recordings[0]?.kind ?? "drive");
       setScanError("");
@@ -379,6 +451,8 @@ export default function App() {
   useEffect(() => {
     setPlaying(false);
     setSrc("");
+    preparedFileRef.current = null;
+    setSaveHint("");
     setSeek((old) => ({ time: 0, token: old.token + 1 }));
     setTime(0);
     setDuration(0);
@@ -420,6 +494,11 @@ export default function App() {
           if (!controller.signal.aborted) setPrepareProgress(text);
         });
         if (controller.signal.aborted) return;
+        preparedFileRef.current = new File(
+          [blob],
+          localFile.name.replace(/\.[^.]+$/, "") + "-解码.mp4",
+          { type: "video/mp4" },
+        );
         objectURL = URL.createObjectURL(blob);
         setSrc(objectURL);
         setStatus("ready");
@@ -560,6 +639,37 @@ export default function App() {
         )}
       </Drawer>
 
+      <Modal
+        size="sm"
+        isOpen={exportOpen}
+        onOpenChange={setExportOpen}
+        UNSTABLE_portalContainer={stage ? (playerRef.current ?? undefined) : undefined}
+      >
+        <ModalHeader
+          title="下载视频"
+          description="按原始镜头画面排版导出，不包含实时畸变校正。"
+          closeLabel="关闭导出选项"
+        />
+        <ModalBody className="flex flex-col gap-2">
+          <Button
+            variant="secondary"
+            leadingIcon={RiLayoutRightLine}
+            disabled={saving || status !== "ready"}
+            onClick={() => void saveVideo("focus")}
+          >
+            主视角 · {labels[primary]}
+          </Button>
+          <Button
+            variant="secondary"
+            leadingIcon={RiGridLine}
+            disabled={saving || status !== "ready"}
+            onClick={() => void saveVideo("grid")}
+          >
+            四宫格
+          </Button>
+        </ModalBody>
+      </Modal>
+
       <main className="detail-page flex min-h-dvh min-w-0 flex-1 flex-col bg-background-primary-default">
         <header className="detail-header sticky top-0 z-20 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-separator-border bg-background-primary-default/90 px-3 backdrop-blur-md supports-[padding:max(0px)]:pt-[env(safe-area-inset-top)] sm:h-14 sm:px-5">
           <div className="flex min-w-0 items-center gap-2">
@@ -633,7 +743,7 @@ export default function App() {
                 className="motion-enter player-placeholder flex min-h-80 flex-col items-center justify-center gap-4 bg-background-secondary-default px-6 py-10 text-center text-text-tertiary"
               >
                 {status === "preparing" ? (
-                  <Spinner size="lg" className="text-accent-400" />
+                  <Spinner size="lg" track={false} className="text-accent-400" />
                 ) : (
                   <RiVideoLine className="size-9" aria-hidden />
                 )}
@@ -746,6 +856,30 @@ export default function App() {
                   >
                     <FullscreenIcon expanded={stage} />
                   </Button>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <IconButton
+                      icon={saving ? RiRefreshLine : DownloadIcon}
+                      size="small"
+                      className={cx(
+                        "transport-icon-btn",
+                        saving && "[&>svg]:animate-spin motion-reduce:[&>svg]:animate-none",
+                      )}
+                      title={saving ? exportProgress || "正在保存…" : "下载视频"}
+                      aria-label={saving ? "正在保存…" : "下载视频"}
+                      aria-busy={saving}
+                      disabled={status !== "ready" || saving}
+                      onClick={() => setExportOpen(true)}
+                    />
+                    {saving && (
+                      <span
+                        role="status"
+                        className="max-w-32 truncate text-caption-1-regular text-text-secondary"
+                        title={exportProgress}
+                      >
+                        {exportProgress || "正在导出…"}
+                      </span>
+                    )}
+                  </div>
                   <div className="speed">
                     <PlaybackSpeed
                       value={rate}
@@ -755,6 +889,11 @@ export default function App() {
                   </div>
                 </div>
               </div>
+              {saveHint && (
+                <p role="status" className="mt-2 text-caption-1-regular text-text-secondary">
+                  {saveHint}
+                </p>
+              )}
               {fullscreenHint && (
                 <p role="status" className="mt-2 text-caption-1-regular text-text-secondary">
                   {fullscreenHint}

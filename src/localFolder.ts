@@ -1,6 +1,6 @@
 /** Client-side U 盘选择；iPhone 仅允许少量文件，其他设备支持文件夹。 */
 
-export const IPHONE_RECORDING_LIMIT = 10;
+export const IPHONE_RECORDING_LIMIT = 1;
 
 export type LocalRecording = {
   id: string;
@@ -88,19 +88,26 @@ export function isLikelyMobileSafari(): boolean {
   return iOS;
 }
 
+export function isMobileBrowser(): boolean {
+  return (
+    isLikelyMobileSafari() ||
+    (typeof navigator !== "undefined" && /Android|Mobile/i.test(navigator.userAgent))
+  );
+}
+
 export function isIPhoneBrowser(): boolean {
   if (typeof navigator === "undefined") return false;
   return /iPhone/i.test(navigator.userAgent || "") || /^iPhone$/i.test(navigator.platform || "");
 }
 
-const iPhoneDirectoryMessage = `iPhone 上已停用文件夹导入。请选择录像文件，每次最多 ${IPHONE_RECORDING_LIMIT} 个。`;
+const iPhoneDirectoryMessage = `移动端已停用文件夹导入。请选择录像文件，每次最多 ${IPHONE_RECORDING_LIMIT} 个。`;
 
 /** Enforce the iPhone limit before indexing, hashing, or reading file content. */
 export function validateRecordingSelection(files: File[]): void {
-  if (!isIPhoneBrowser()) return;
+  if (!isMobileBrowser()) return;
   if (files.length > IPHONE_RECORDING_LIMIT) {
     throw new Error(
-      `iPhone 每次最多选择 ${IPHONE_RECORDING_LIMIT} 个文件，本次选择了 ${files.length} 个。请减少数量后重新选择。`,
+      `移动端每次最多选择 ${IPHONE_RECORDING_LIMIT} 个文件，本次选择了 ${files.length} 个。请减少数量后重新选择。`,
     );
   }
   if (files.some((file) => file.webkitRelativePath)) {
@@ -328,7 +335,7 @@ function attachInputWaiter(
 function makeHiddenFileInput(directory: boolean): HTMLInputElement {
   const input = document.createElement("input");
   input.type = "file";
-  input.multiple = true;
+  input.multiple = !isMobileBrowser();
   if (directory) {
     input.setAttribute("webkitdirectory", "");
     input.setAttribute("directory", "");
@@ -409,7 +416,7 @@ export function waitForInputFiles(input: HTMLInputElement, signal?: AbortSignal)
  */
 export function pickDirectoryFiles(signal?: AbortSignal, waitOpts?: WaitOpts): Promise<File[]> {
   if (signal?.aborted) return Promise.resolve([]);
-  if (isIPhoneBrowser()) return Promise.reject(new Error(iPhoneDirectoryMessage));
+  if (isMobileBrowser()) return Promise.reject(new Error(iPhoneDirectoryMessage));
   if (supportsDirectoryPicker()) {
     return pickWithShowDirectoryPicker().catch(() => pickWithWebkitDirectory(signal, waitOpts));
   }
@@ -482,7 +489,7 @@ export async function buildDriveFromFiles(
       throw new Error("找到了 .h264 文件，但大小为 0，无法播放。请确认 U 盘已正确挂载后重试。");
     }
     if (!files.length) {
-      if (isIPhoneBrowser()) {
+      if (isMobileBrowser()) {
         throw new Error(
           `未读到任何文件。请从 U 盘选择录像文件，每次最多 ${IPHONE_RECORDING_LIMIT} 个。`,
         );
@@ -496,7 +503,7 @@ export async function buildDriveFromFiles(
         "未读到任何文件。请在「文件」中打开 U 盘（常见名「NO NAME」），选择整个 U 盘或 driverecord 目录后点「打开」；若仍不行，点「多选录像文件」直接选 .h264。",
       );
     }
-    if (isIPhoneBrowser()) {
+    if (isMobileBrowser()) {
       throw new Error(`已选择 ${files.length} 个文件，但未找到零跑录像。请选择 .h264 文件。`);
     }
     throw new Error(

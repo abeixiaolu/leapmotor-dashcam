@@ -135,18 +135,13 @@ export function RecordingList(p: Props) {
                     className="w-full shadow-none"
                     onClick={p.onPickFiles}
                   >
-                    {p.picking
-                      ? "取消等待"
-                      : p.fileSelectionLimit
-                        ? `多选录像（最多 ${p.fileSelectionLimit} 段）`
-                        : "多选录像文件"}
+                    {p.picking ? "取消等待" : p.fileSelectionLimit ? "添加录像" : "多选录像文件"}
                   </Button>
                 )}
               </div>
               {p.fileSelectionLimit && (
                 <p className="text-caption-1-regular text-text-secondary">
-                  iPhone 每次最多选择 {p.fileSelectionLimit} 段 .h264
-                  录像。请逐个勾选，请勿全选；不支持导入文件夹。
+                  移动端每次选择一段 .h264 录像，添加到现有列表；重复选择不会重复添加。
                 </p>
               )}
               {p.scanError && (
@@ -290,7 +285,7 @@ export function RecordingList(p: Props) {
                   {p.drive
                     ? "试试其他日期或录像分类。"
                     : p.fileSelectionLimit
-                      ? `在「浏览」中进入 U 盘的录像目录，逐个勾选 1–${p.fileSelectionLimit} 个 .h264 文件后点「打开」。`
+                      ? `在「浏览」中进入 U 盘的录像目录，选择 ${p.fileSelectionLimit} 个 .h264 文件后点「打开」。`
                       : p.onPickFiles
                         ? "在「浏览」中进入 U 盘或录像文件夹，点右上角「打开」，即可自动整理其中的录像。"
                         : "选择 U 盘或本机录像文件夹，文件不会上传。"}
@@ -316,9 +311,7 @@ export function RecordingList(p: Props) {
                         className="shadow-none"
                         onClick={p.onPickFiles}
                       >
-                        {p.fileSelectionLimit
-                          ? `多选录像（最多 ${p.fileSelectionLimit} 段）`
-                          : "多选录像文件"}
+                        {p.fileSelectionLimit ? "添加录像" : "多选录像文件"}
                       </Button>
                     )}
                   </>

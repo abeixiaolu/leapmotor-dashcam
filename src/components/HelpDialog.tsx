@@ -32,8 +32,9 @@ export function HelpDialog({
                 </p>
                 {fileSelectionLimit ? (
                   <p className="mt-1">
-                    点击「多选录像」，在「浏览」中进入 U 盘的 driverecord 或 sentinel 目录，
-                    逐个勾选 1–{fileSelectionLimit} 个 .h264 文件后点「打开」，请勿全选。 iPhone
+                    点击「添加录像」，在「浏览」中进入 U 盘的 driverecord 或 sentinel 目录，
+                    选择一个 .h264
+                    文件后点「打开」，新录像会追加到列表，重复文件不会重复添加。移动端
                     不提供文件夹导入；超过上限会拒绝本次选择，请重新选择。
                     每次选择会替换当前列表，刷新后需要重新选择。没有目录信息的录像默认归为行车。
                   </p>
