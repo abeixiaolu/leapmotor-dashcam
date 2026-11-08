@@ -72,6 +72,43 @@ receive_archive() {
     echo "${archive_file}"
 }
 
+# 验证归档内容（提取前）
+validate_archive_contents() {
+    local archive_file="$1"
+    
+    log_info "验证归档内容..."
+    
+    # 列出归档成员
+    local member_count=0
+    while IFS= read -r member; do
+        # 跳过目录条目
+        if [[ "$member" == */ ]]; then
+            continue
+        fi
+        
+        # 检查是否为链接（l 开头）
+        if [[ "$member" =~ ^l ]]; then
+            log_error "归档包含链接: $member"
+            return 1
+        fi
+        
+        # 检查是否为特殊文件（b/c/p 开头）
+        if [[ "$member" =~ ^[bcp] ]]; then
+            log_error "归档包含特殊文件: $member"
+            return 1
+        fi
+        
+        member_count=$((member_count + 1))
+        
+        if [[ $member_count -gt $MAX_FILE_COUNT ]]; then
+            log_error "归档成员数量超过限制"
+            return 1
+        fi
+    done < <(tar -tzf "${archive_file}" --verbose 2>&1 | grep -v '/$' || true)
+    
+    log_info "归档内容验证通过: ${member_count} 个成员"
+}
+
 # 解压归档（以 nobody 权限）
 extract_archive() {
     local archive_file="$1"
@@ -195,10 +232,21 @@ validate_extracted() {
         fi
     done < "${extract_dir}/build-manifest.txt"
     
+    # 检查软链接（提取后仍需检查，防止 tar 漏洞）
+    local symlink_count
+    symlink_count=$(find "${extract_dir}" -type l 2>/dev/null | wc -l)
+    
+    if [[ $symlink_count -gt 0 ]]; then
+        log_error "提取目录包含软链接"
+        find "${extract_dir}" -type l 2>&1 >&2
+        return 1
+    fi
+    
     # 检查是否有额外文件（不在清单中）
     while IFS= read -r file; do
+        # 规范化路径（移除 ./ 前缀，与清单一致）
         local rel_path
-        rel_path=$(realpath --relative-to="${extract_dir}" "$file")
+        rel_path=$(realpath --relative-to="${extract_dir}" "$file" | sed 's|^\./||')
         
         # 跳过 build-manifest.txt 本身
         if [[ "$rel_path" == "build-manifest.txt" ]]; then
@@ -341,6 +389,7 @@ atomic_switch() {
 # 健康检查
 health_check() {
     local expected_revision="$1"
+    local expected_version="$2"
     
     log_info "执行健康检查..."
     
@@ -359,17 +408,32 @@ health_check() {
         return 1
     fi
     
-    # 检查版本匹配
-    if [[ ! "$current_path" == *"${expected_revision:0:8}"* ]]; then
-        log_error "版本不匹配: 期望 ${expected_revision:0:8}，当前 $(basename "$current_path")"
+    # 检查版本匹配（目录名）
+    if [[ ! "$current_path" == *"${expected_version}"* ]]; then
+        log_error "版本不匹配: 期望 ${expected_version}，当前 $(basename "$current_path")"
         return 1
     fi
     
-    # 检查健康端点（如果存在）
+    # 检查健康端点 metadata
     if [[ -f "${current_path}/health.json" ]]; then
         if ! grep -q '"status".*"ok"' "${current_path}/health.json"; then
-            log_warn "健康端点状态异常"
+            log_error "健康端点状态异常"
+            return 1
         fi
+        
+        # 验证 revision
+        if ! grep -q "\"revision\".*\"${expected_revision}\"" "${current_path}/health.json"; then
+            log_error "健康端点 revision 不匹配"
+            return 1
+        fi
+        
+        # 验证 version
+        if ! grep -q "\"version\".*\"${expected_version}\"" "${current_path}/health.json"; then
+            log_error "健康端点 version 不匹配"
+            return 1
+        fi
+        
+        log_info "健康端点 metadata 验证通过"
     fi
     
     log_info "健康检查通过"
@@ -468,6 +532,9 @@ main() {
     local archive_file
     archive_file=$(receive_archive "$staging_dir")
     
+    # 验证归档内容（提取前）
+    validate_archive_contents "$archive_file"
+    
     # 解压归档（非 root）
     local extract_dir
     extract_dir=$(extract_archive "$archive_file")
@@ -489,7 +556,7 @@ main() {
     atomic_switch "$release_dir"
     
     # 健康检查（失败则回滚）
-    if ! health_check "$revision"; then
+    if ! health_check "$revision" "$release_name"; then
         log_error "健康检查失败，开始回滚"
         rollback
         exit 1

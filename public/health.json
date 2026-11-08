@@ -1,5 +1,7 @@
 {
   "status": "ok",
   "service": "leapmotor-dashcam",
-  "version": "deployed"
+  "version": "__VERSION_PLACEHOLDER__",
+  "revision": "__REVISION_PLACEHOLDER__",
+  "buildTime": "__BUILD_TIME_PLACEHOLDER__"
 }

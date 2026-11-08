@@ -71,18 +71,44 @@ jobs:
         env:
           NODE_ENV: production
       
-      - name: Generate build manifest
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+      - name: Generate build manifest and inject metadata
+        if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |
+          # 生成版本指纹
+          REVISION="${{ github.sha }}"
+          BUILD_TIME="$(date -u +%Y%m%d-%H%M%S)"
+          
           cd dist
-          find . -type f | sort | xargs sha256sum > ../build-manifest.txt
-          echo "REVISION=${{ github.sha }}" >> ../build-manifest.txt
-          echo "BUILD_TIME=$(date -u +%Y%m%d-%H%M%S)" >> ../build-manifest.txt
+          
+          # 注入 metadata 到 health.json
+          if [ -f health.json ]; then
+            # 计算指纹
+            TEMP_MANIFEST=$(mktemp)
+            find . -type f ! -name health.json | sed 's|^\./||' | sort | while read -r file; do
+              sha256sum "$file"
+            done > "$TEMP_MANIFEST"
+            FINGERPRINT=$(sha256sum "$TEMP_MANIFEST" | cut -c1-8)
+            rm "$TEMP_MANIFEST"
+            
+            VERSION="${REVISION:0:8}-${FINGERPRINT}"
+            
+            sed -i "s/__VERSION_PLACEHOLDER__/${VERSION}/g" health.json
+            sed -i "s/__REVISION_PLACEHOLDER__/${REVISION}/g" health.json
+            sed -i "s/__BUILD_TIME_PLACEHOLDER__/${BUILD_TIME}/g" health.json
+          fi
+          
+          # 生成完整清单
+          find . -type f | sed 's|^\./||' | sort | while read -r file; do
+            sha256sum "$file"
+          done > ../build-manifest.txt
+          
+          echo "REVISION=${REVISION}" >> ../build-manifest.txt
+          echo "BUILD_TIME=${BUILD_TIME}" >> ../build-manifest.txt
           echo "GITHUB_RUN_ID=${{ github.run_id }}" >> ../build-manifest.txt
           cd ..
       
       - name: Upload build artifacts
-        if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         uses: actions/upload-artifact@v4
         with:
           name: dist-${{ github.sha }}
