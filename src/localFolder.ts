@@ -1,6 +1,6 @@
 /** Client-side U 盘选择；iPhone 仅允许少量文件，其他设备支持文件夹。 */
 
-export const IPHONE_RECORDING_LIMIT = 1;
+export const IPHONE_RECORDING_LIMIT = 3;
 
 export type LocalRecording = {
   id: string;
@@ -346,7 +346,8 @@ function attachInputWaiter(
 function makeHiddenFileInput(directory: boolean): HTMLInputElement {
   const input = document.createElement("input");
   input.type = "file";
-  input.multiple = !isMobileBrowser();
+  // 移动端文件多选（上限见 validateRecordingSelection）；文件夹导入仍仅桌面
+  input.multiple = directory ? !isMobileBrowser() : true;
   if (directory) {
     input.setAttribute("webkitdirectory", "");
     input.setAttribute("directory", "");
