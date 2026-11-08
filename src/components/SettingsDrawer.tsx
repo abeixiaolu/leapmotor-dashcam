@@ -1,10 +1,18 @@
 import Reset from "@carbon/icons-react/es/Reset.js";
+import Screen from "@carbon/icons-react/es/Screen.js";
+import Sun from "@carbon/icons-react/es/Sun.js";
+import Moon from "@carbon/icons-react/es/Moon.js";
+import {
+  SegmentedControl,
+  SegmentedControlItem,
+} from "@/components/base/segmented-control/segmented-control";
+import type { ThemePreference } from "@/theme";
 import { Button } from "@/components/base/buttons/button";
 import { Drawer, DrawerHeader } from "@/components/base/drawer/drawer";
 import { Slider } from "@/components/base/slider/slider";
 import { Switch } from "@/components/base/switch/switch";
 import { ScrollFade, useScrollFade } from "@/components/foundations/scroll-fade/scroll-fade";
-import type { CorrectionSettings } from "@/settings";
+import { DEFAULT_CORRECTION_SETTINGS, type CorrectionSettings } from "@/settings";
 import "./settings-drawer.css";
 
 type Props = {
@@ -13,9 +21,19 @@ type Props = {
   value: CorrectionSettings;
   onChange: (value: CorrectionSettings) => void;
   saved: boolean;
+  theme: ThemePreference;
+  onThemeChange: (value: ThemePreference) => void;
 };
 
-export function SettingsDrawer({ open, onOpenChange, value, onChange, saved }: Props) {
+export function SettingsDrawer({
+  open,
+  onOpenChange,
+  value,
+  onChange,
+  saved,
+  theme,
+  onThemeChange,
+}: Props) {
   const fade = useScrollFade();
   return (
     <Drawer
@@ -40,6 +58,36 @@ export function SettingsDrawer({ open, onOpenChange, value, onChange, saved }: P
           onScroll={fade.onScroll}
           className="h-full overflow-y-auto overscroll-contain px-6 py-6"
         >
+          <section
+            aria-labelledby="theme-settings-title"
+            className="mb-6 flex items-center justify-between gap-2 border-b border-separator-border pb-6"
+          >
+            <h2 id="theme-settings-title" className="shrink-0 text-body-medium text-text-primary">
+              外观主题
+            </h2>
+            <SegmentedControl
+              aria-labelledby="theme-settings-title"
+              selectedKeys={new Set([theme])}
+              onSelectionChange={(keys) => {
+                const next = [...keys][0];
+                if (next === "system" || next === "light" || next === "dark") onThemeChange(next);
+              }}
+              className="shrink-0"
+            >
+              <SegmentedControlItem id="system" aria-label="跟随系统">
+                <Screen className="size-4 shrink-0" aria-hidden />
+                <span className="ms-1">跟随系统</span>
+              </SegmentedControlItem>
+              <SegmentedControlItem id="light" aria-label="浅色">
+                <Sun className="size-4 shrink-0" aria-hidden />
+                <span className="ms-1">浅色</span>
+              </SegmentedControlItem>
+              <SegmentedControlItem id="dark" aria-label="深色">
+                <Moon className="size-4 shrink-0" aria-hidden />
+                <span className="ms-1">深色</span>
+              </SegmentedControlItem>
+            </SegmentedControl>
+          </section>
           <section aria-labelledby="correction-settings-title" className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3">
               <h2 id="correction-settings-title" className="text-body-medium text-text-primary">
@@ -50,7 +98,13 @@ export function SettingsDrawer({ open, onOpenChange, value, onChange, saved }: P
                 size="small"
                 leadingIcon={Reset}
                 aria-label="重置校正参数"
-                onClick={() => onChange({ ...value, fov: 95, strength: 1 })}
+                onClick={() =>
+                  onChange({
+                    ...value,
+                    fov: DEFAULT_CORRECTION_SETTINGS.fov,
+                    strength: DEFAULT_CORRECTION_SETTINGS.strength,
+                  })
+                }
               >
                 重置
               </Button>

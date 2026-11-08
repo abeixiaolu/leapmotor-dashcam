@@ -27,6 +27,7 @@ import { default as RiLayoutRightLine } from "@carbon/icons-react/es/ViewMode_1.
 import { default as RiEqualizerLine } from "@carbon/icons-react/es/SettingsAdjust.js";
 import { Spinner } from "@/components/base/spinner/spinner";
 import { PlayerSlider, PlaybackSpeed } from "./components/PlayerControls";
+import { useThemePreference } from "./theme";
 import { SettingsDrawer } from "@/components/SettingsDrawer";
 import { readCorrectionSettings, saveCorrectionSettings } from "@/settings";
 import { MosaicPlayer } from "./MosaicPlayer";
@@ -74,6 +75,7 @@ export default function App() {
     [time, setTime] = useState(0),
     [duration, setDuration] = useState(0),
     [seek, setSeek] = useState({ time: 0, token: 0 });
+  const theme = useThemePreference();
   const [settings, setSettings] = useState(readCorrectionSettings);
   const { correct, fov, strength } = settings;
   const [settingsSaved, setSettingsSaved] = useState(true);
@@ -609,7 +611,7 @@ export default function App() {
   );
 
   return (
-    <div className="app app-shell flex min-h-dvh bg-background-primary-default">
+    <div className="app app-shell flex bg-background-primary-default">
       {/* Desktop / wide: persistent left list */}
       <aside className="app-sidebar sticky top-0 hidden h-dvh w-72 shrink-0 flex-col border-e border-separator-border bg-background-primary-default desktop:flex">
         <RecordingList {...listProps} />
@@ -670,7 +672,7 @@ export default function App() {
         </ModalBody>
       </Modal>
 
-      <main className="detail-page flex min-h-dvh min-w-0 flex-1 flex-col bg-background-primary-default">
+      <main className="detail-page flex min-h-0 min-w-0 flex-1 flex-col bg-background-primary-default">
         <header className="detail-header sticky top-0 z-20 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-separator-border bg-background-primary-default/90 px-3 backdrop-blur-md supports-[padding:max(0px)]:pt-[env(safe-area-inset-top)] sm:h-14 sm:px-5">
           <div className="flex min-w-0 items-center gap-2">
             <Button
@@ -712,11 +714,11 @@ export default function App() {
           </div>
         </header>
 
-        <div className="detail-content mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 pb-8 pt-4 sm:px-6 sm:pt-6">
+        <div className="detail-content mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-4 px-4 pb-8 pt-4 sm:px-6 sm:pt-6">
           <div
             ref={playerRef}
             className={cx(
-              "player overflow-hidden rounded-3xl border border-border-button-default bg-background-primary-default",
+              "player rounded-3xl border border-border-button-default bg-background-primary-default",
               stage && "is-stage-fullscreen",
             )}
           >
@@ -740,7 +742,7 @@ export default function App() {
             ) : (
               <div
                 key={status}
-                className="motion-enter player-placeholder flex min-h-80 flex-col items-center justify-center gap-4 bg-background-secondary-default px-6 py-10 text-center text-text-tertiary"
+                className="motion-enter player-placeholder flex min-h-0 flex-col items-center justify-center gap-4 bg-background-secondary-default px-6 py-10 text-center text-text-tertiary"
               >
                 {status === "preparing" ? (
                   <Spinner size="lg" track={false} className="text-accent-400" />
@@ -921,7 +923,9 @@ export default function App() {
         onOpenChange={setSettingsOpen}
         value={settings}
         onChange={setSettings}
-        saved={settingsSaved}
+        saved={settingsSaved && theme.saved}
+        theme={theme.preference}
+        onThemeChange={theme.setPreference}
       />
       <HelpDialog
         open={help}

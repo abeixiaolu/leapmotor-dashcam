@@ -1,9 +1,38 @@
 @reference "./styles/globals.css";
 /* App-specific surfaces that sit outside BoardUI primitives (player mosaic). */
 
-.app-pages,
 .app-shell {
-  min-height: 100dvh;
+  height: 100dvh;
+  min-height: 0;
+}
+
+.detail-page {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Intrinsic header/padding/transport sizes are subtracted by flex/grid, not offsets. */
+.detail-content {
+  min-height: 0;
+}
+.player {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+.player > .mosaic-grid,
+.player > .player-placeholder {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.player > .player-placeholder {
+  overflow-y: auto;
+}
+.player > .transport {
+  position: static;
 }
 
 .app-sidebar {
@@ -34,7 +63,6 @@
 .mosaic-grid.layout-focus {
   grid-template-columns: minmax(0, 1fr) minmax(100px, 26%);
   grid-template-rows: repeat(3, minmax(0, 1fr));
-  aspect-ratio: 1.65;
 }
 
 .mosaic-grid.layout-focus .camera {
@@ -49,7 +77,6 @@
 .mosaic-grid.layout-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
-  aspect-ratio: 1.4;
 }
 
 .mosaic-grid .mosaic-canvas {
@@ -165,8 +192,8 @@
   z-index: 100;
   width: 100%;
   height: 100dvh;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
     env(safe-area-inset-left);
 }
@@ -328,7 +355,6 @@
   .mosaic-grid.layout-focus {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-template-rows: minmax(0, 3fr) minmax(0, 1fr);
-    aspect-ratio: 0.95;
     gap: 4px;
     padding: 4px;
   }
@@ -344,13 +370,9 @@
   }
 
   .mosaic-grid.layout-grid {
-    aspect-ratio: 1.05;
   }
 
   .detail-page .transport {
-    position: sticky;
-    bottom: 0;
-    z-index: 15;
     padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 }
@@ -360,10 +382,6 @@
 @media (max-width: 1100px) and (max-height: 560px) and (orientation: landscape) {
   .app-sidebar {
     display: none !important;
-  }
-
-  .detail-page {
-    min-height: 100dvh;
   }
 
   .detail-header {
@@ -383,7 +401,6 @@
     grid-template-columns: minmax(0, 1fr) minmax(110px, 24%);
     grid-template-rows: repeat(3, minmax(0, 1fr));
     aspect-ratio: auto;
-    height: max(150px, calc(100dvh - 148px));
   }
 
   .mosaic-grid.layout-focus .camera:not(.is-primary) {
@@ -400,11 +417,9 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
     grid-template-rows: minmax(0, 1fr);
     aspect-ratio: auto;
-    height: max(150px, calc(100dvh - 148px));
   }
 
   .player-placeholder {
-    min-height: max(150px, calc(100dvh - 148px));
     padding-block: 1rem;
   }
 
@@ -528,7 +543,6 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) 192px;
     grid-template-rows: minmax(0, 1fr);
-    height: calc(100dvh - 56px);
     min-height: 0;
   }
 

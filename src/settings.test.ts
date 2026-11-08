@@ -19,6 +19,17 @@ function memoryStorage(initial?: string) {
 }
 
 describe("鱼眼校正设置保存", () => {
+  it("新默认角度为110度且保留已有自定义角度和关闭状态", () => {
+    expect(DEFAULT_CORRECTION_SETTINGS.fov).toBe(110);
+    expect(readCorrectionSettings(memoryStorage()).fov).toBe(110);
+    const saved = { correct: false, fov: 95, strength: 0.6 };
+    expect(readCorrectionSettings(memoryStorage(JSON.stringify(saved)))).toEqual(saved);
+    expect(parseCorrectionSettings({ correct: false })).toEqual({
+      ...DEFAULT_CORRECTION_SETTINGS,
+      correct: false,
+    });
+  });
+
   it("再次读取时保留关闭状态、角度和零强度", () => {
     const storage = memoryStorage();
     const settings = { correct: false, fov: 112, strength: 0 };
@@ -38,7 +49,7 @@ describe("鱼眼校正设置保存", () => {
     );
     expect(parseCorrectionSettings({ correct: false, fov: "90", strength: 0.5 })).toEqual({
       correct: false,
-      fov: 95,
+      fov: 110,
       strength: 0.5,
     });
   });

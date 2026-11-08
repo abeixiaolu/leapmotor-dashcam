@@ -6,7 +6,7 @@ export type CorrectionSettings = {
 
 export const DEFAULT_CORRECTION_SETTINGS: Readonly<CorrectionSettings> = Object.freeze({
   correct: true,
-  fov: 95,
+  fov: 110,
   strength: 1,
 });
 
