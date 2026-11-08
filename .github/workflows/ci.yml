@@ -74,34 +74,33 @@ jobs:
       - name: Generate build manifest and inject metadata
         if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         run: |
-          # 生成版本指纹
           REVISION="${{ github.sha }}"
           BUILD_TIME="$(date -u +%Y%m%d-%H%M%S)"
           
           cd dist
           
-          # 注入 metadata 到 health.json
+          # 步骤 1: 生成完整清单（不含 metadata 行）
+          find . -type f | sed 's|^\./||' | sort | while read -r file; do
+            sha256sum "$file"
+          done > ../build-manifest.txt
+          
+          # 步骤 2: 计算指纹（基于完整清单，含 health.json 占位符）
+          FINGERPRINT=$(sha256sum ../build-manifest.txt | cut -c1-8)
+          VERSION="${REVISION:0:8}-${FINGERPRINT}"
+          
+          # 步骤 3: 注入 metadata 到 health.json
           if [ -f health.json ]; then
-            # 计算指纹
-            TEMP_MANIFEST=$(mktemp)
-            find . -type f ! -name health.json | sed 's|^\./||' | sort | while read -r file; do
-              sha256sum "$file"
-            done > "$TEMP_MANIFEST"
-            FINGERPRINT=$(sha256sum "$TEMP_MANIFEST" | cut -c1-8)
-            rm "$TEMP_MANIFEST"
-            
-            VERSION="${REVISION:0:8}-${FINGERPRINT}"
-            
             sed -i "s/__VERSION_PLACEHOLDER__/${VERSION}/g" health.json
             sed -i "s/__REVISION_PLACEHOLDER__/${REVISION}/g" health.json
             sed -i "s/__BUILD_TIME_PLACEHOLDER__/${BUILD_TIME}/g" health.json
           fi
           
-          # 生成完整清单
+          # 步骤 4: 重新生成清单（含更新后的 health.json）
           find . -type f | sed 's|^\./||' | sort | while read -r file; do
             sha256sum "$file"
           done > ../build-manifest.txt
           
+          # 步骤 5: 追加 metadata 行
           echo "REVISION=${REVISION}" >> ../build-manifest.txt
           echo "BUILD_TIME=${BUILD_TIME}" >> ../build-manifest.txt
           echo "GITHUB_RUN_ID=${{ github.run_id }}" >> ../build-manifest.txt

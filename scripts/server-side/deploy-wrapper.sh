@@ -52,7 +52,7 @@ receive_archive() {
     local staging_dir="$1"
     local archive_file="${staging_dir}/archive.tar.gz"
     
-    log_info "接收构建归档..."
+    log_info "等待构建归档..."
     
     # 限制归档大小（从 stdin 读取）
     if ! head -c $((MAX_ARCHIVE_SIZE + 1)) > "${archive_file}"; then
@@ -62,6 +62,11 @@ receive_archive() {
     
     local size
     size=$(stat -c%s "${archive_file}")
+    
+    if [[ $size -eq 0 ]]; then
+        log_error "接收到空归档"
+        return 1
+    fi
     
     if [[ $size -gt $MAX_ARCHIVE_SIZE ]]; then
         log_error "归档超过大小限制: ${size} > ${MAX_ARCHIVE_SIZE}"
@@ -78,33 +83,46 @@ validate_archive_contents() {
     
     log_info "验证归档内容..."
     
-    # 列出归档成员
+    # 列出归档成员并检查文件类型
     local member_count=0
-    while IFS= read -r member; do
-        # 跳过目录条目
-        if [[ "$member" == */ ]]; then
+    while IFS= read -r line; do
+        # tar -tvzf 输出格式: 权限 ... 文件名
+        # 第一个字符表示类型: - (普通), d (目录), l (软链接), h (硬链接), b/c/p (特殊)
+        local type_char="${line:0:1}"
+        
+        # 允许普通文件和目录
+        if [[ "$type_char" == "-" ]] || [[ "$type_char" == "d" ]]; then
+            member_count=$((member_count + 1))
+            
+            if [[ $member_count -gt $MAX_FILE_COUNT ]]; then
+                log_error "归档成员数量超过限制"
+                return 1
+            fi
             continue
         fi
         
-        # 检查是否为链接（l 开头）
-        if [[ "$member" =~ ^l ]]; then
-            log_error "归档包含链接: $member"
+        # 拒绝软链接
+        if [[ "$type_char" == "l" ]]; then
+            log_error "归档包含软链接: $line"
             return 1
         fi
         
-        # 检查是否为特殊文件（b/c/p 开头）
-        if [[ "$member" =~ ^[bcp] ]]; then
-            log_error "归档包含特殊文件: $member"
+        # 拒绝硬链接
+        if [[ "$type_char" == "h" ]]; then
+            log_error "归档包含硬链接: $line"
             return 1
         fi
         
-        member_count=$((member_count + 1))
-        
-        if [[ $member_count -gt $MAX_FILE_COUNT ]]; then
-            log_error "归档成员数量超过限制"
+        # 拒绝特殊文件
+        if [[ "$type_char" =~ ^[bcp] ]]; then
+            log_error "归档包含特殊文件: $line"
             return 1
         fi
-    done < <(tar -tzf "${archive_file}" --verbose 2>&1 | grep -v '/$' || true)
+        
+        # 其他未知类型也拒绝
+        log_error "归档包含未知文件类型: $line"
+        return 1
+    done < <(tar -tvzf "${archive_file}" 2>&1)
     
     log_info "归档内容验证通过: ${member_count} 个成员"
 }

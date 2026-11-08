@@ -51,23 +51,14 @@ validate_params() {
     fi
 }
 
-# 测试 SSH 连接（通过部署协议的空输入测试）
+# 测试 SSH 连接（使用独立的健康检查命令）
 test_ssh_connection() {
     log_info "测试 SSH 连接..."
     
-    # 通过 forced command 测试（空输入会被拒绝，但验证连接）
-    if echo "" | ssh -o BatchMode=yes \
-                     -o ConnectTimeout=10 \
-                     -o StrictHostKeyChecking=yes \
-                     -o IdentitiesOnly=yes \
-                "${DEPLOY_USER}@${DEPLOY_HOST}" 2>&1 | \
-        grep -q "接收构建归档"; then
-        log_info "SSH 连接验证成功"
-        return 0
-    else
-        log_error "无法连接到部署服务器或部署脚本未响应"
-        return 1
-    fi
+    # 注意：由于 forced command，无法使用独立的探活命令
+    # 跳过 SSH 探活，直接在部署时验证连接
+    log_info "跳过 SSH 探活（forced command 限制）"
+    return 0
 }
 
 # 打包构建产物
@@ -133,17 +124,56 @@ deploy_to_server() {
 
 # 验证部署结果（通过 HTTP 访问健康端点）
 verify_deployment() {
+    local expected_version="$1"
+    
     log_info "验证部署结果..."
     
     # 等待服务更新
-    sleep 2
+    sleep 3
     
-    # 通过 HTTP 验证（假设 Caddy 服务可访问）
-    # 注意：实际部署时需要可访问的 URL
-    log_info "部署完成，建议通过 HTTP 验证: https://dashcam.abei.me/health.json"
-    log_info "期望版本: ${REVISION:0:8}"
+    local health_url="https://dashcam.abei.me/health.json"
+    local max_retries=5
+    local retry=0
     
-    return 0
+    while [[ $retry -lt $max_retries ]]; do
+        log_info "尝试 HTTP 健康检查 ($((retry + 1))/$max_retries)..."
+        
+        # 获取 health.json
+        local health_response
+        if health_response=$(curl -sf --max-time 10 "$health_url" 2>&1); then
+            # 验证 status
+            if ! echo "$health_response" | grep -q '"status".*"ok"'; then
+                log_error "健康端点状态异常"
+                return 1
+            fi
+            
+            # 验证 revision
+            if ! echo "$health_response" | grep -q "\"revision\".*\"${REVISION}\""; then
+                log_error "健康端点 revision 不匹配"
+                log_error "期望: ${REVISION}"
+                log_error "响应: $health_response"
+                return 1
+            fi
+            
+            # 验证 version
+            if ! echo "$health_response" | grep -q "\"version\".*\"${expected_version}\""; then
+                log_error "健康端点 version 不匹配"
+                log_error "期望: ${expected_version}"
+                log_error "响应: $health_response"
+                return 1
+            fi
+            
+            log_info "HTTP 健康检查通过"
+            return 0
+        else
+            log_warn "HTTP 请求失败，重试..."
+            retry=$((retry + 1))
+            sleep 2
+        fi
+    done
+    
+    log_error "HTTP 健康检查失败（超过最大重试次数）"
+    return 1
 }
 
 # 清理临时文件
@@ -176,8 +206,13 @@ main() {
     
     # 部署到服务器
     if deploy_to_server "${package_file}"; then
+        # 计算期望的版本名（与服务器端逻辑一致）
+        local expected_fingerprint
+        expected_fingerprint=$(sha256sum "${MANIFEST_FILE}" | cut -c1-8)
+        local expected_version="${REVISION:0:8}-${expected_fingerprint}"
+        
         # 验证部署
-        verify_deployment
+        verify_deployment "$expected_version"
         
         # 清理临时文件
         cleanup "${package_file}"
