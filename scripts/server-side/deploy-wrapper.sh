@@ -266,8 +266,8 @@ validate_extracted() {
         local rel_path
         rel_path=$(realpath --relative-to="${extract_dir}" "$file" | sed 's|^\./||')
         
-        # 跳过 build-manifest.txt 本身
-        if [[ "$rel_path" == "build-manifest.txt" ]]; then
+        # 跳过 build-manifest.txt 和 health.json（health.json 仅作元数据，不参与指纹）
+        if [[ "$rel_path" == "build-manifest.txt" ]] || [[ "$rel_path" == "health.json" ]]; then
             continue
         fi
         
@@ -284,7 +284,7 @@ validate_extracted() {
             log_error "发现额外文件（不在清单中）: $rel_path"
             return 1
         fi
-    done < <(find "${extract_dir}" -type f ! -name build-manifest.txt)
+    done < <(find "${extract_dir}" -type f ! -name build-manifest.txt ! -name health.json)
     
     log_info "内容验证通过: ${file_count} 个文件"
     echo "$revision"
@@ -312,13 +312,14 @@ validate_path_safety() {
     return 0
 }
 
-# 生成版本名称
+# 生成版本名称（排除 health.json 行，与 CI 一致）
 generate_release_name() {
     local revision="$1"
     local manifest_file="$2"
     
+    # 排除 health.json 的清单行，计算指纹
     local fingerprint
-    fingerprint=$(sha256sum "$manifest_file" | cut -c1-8)
+    fingerprint=$(grep -v '^[0-9a-f]\{64\}  health\.json$' "$manifest_file" | sha256sum | cut -c1-8)
     
     local release_name="${revision:0:8}-${fingerprint}"
     echo "$release_name"
@@ -587,8 +588,11 @@ main() {
     log_info "当前版本: ${release_name}"
 }
 
-# 全局错误处理
-trap 'log_error "部署失败，退出码: $?"' ERR
-
-# 执行主流程
-main "$@"
+# 只在直接执行时调用 main，被 source 时不执行
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    # 全局错误处理
+    trap 'log_error "部署失败，退出码: $?"' ERR
+    
+    # 执行主流程
+    main "$@"
+fi

@@ -79,31 +79,32 @@ jobs:
           
           cd dist
           
-          # 步骤 1: 生成完整清单（不含 metadata 行）
-          find . -type f | sed 's|^\./||' | sort | while read -r file; do
+          # 步骤 1: 生成清单（排除 health.json，避免循环依赖）
+          find . -type f ! -name 'health.json' | sed 's|^\./||' | sort | while read -r file; do
             sha256sum "$file"
           done > ../build-manifest.txt
           
-          # 步骤 2: 计算指纹（基于完整清单，含 health.json 占位符）
+          # 步骤 2: 追加 metadata 行
+          echo "REVISION=${REVISION}" >> ../build-manifest.txt
+          echo "BUILD_TIME=${BUILD_TIME}" >> ../build-manifest.txt
+          echo "GITHUB_RUN_ID=${{ github.run_id }}" >> ../build-manifest.txt
+          
+          # 步骤 3: 计算指纹（与 server 一致：基于不含 health.json 的清单）
           FINGERPRINT=$(sha256sum ../build-manifest.txt | cut -c1-8)
           VERSION="${REVISION:0:8}-${FINGERPRINT}"
           
-          # 步骤 3: 注入 metadata 到 health.json
+          # 步骤 4: 注入 metadata 到 health.json
           if [ -f health.json ]; then
             sed -i "s/__VERSION_PLACEHOLDER__/${VERSION}/g" health.json
             sed -i "s/__REVISION_PLACEHOLDER__/${REVISION}/g" health.json
             sed -i "s/__BUILD_TIME_PLACEHOLDER__/${BUILD_TIME}/g" health.json
           fi
           
-          # 步骤 4: 重新生成清单（含更新后的 health.json）
-          find . -type f | sed 's|^\./||' | sort | while read -r file; do
-            sha256sum "$file"
-          done > ../build-manifest.txt
+          # 步骤 5: 将 health.json 追加到清单（不参与指纹，仅作记录）
+          if [ -f health.json ]; then
+            sha256sum health.json >> ../build-manifest.txt
+          fi
           
-          # 步骤 5: 追加 metadata 行
-          echo "REVISION=${REVISION}" >> ../build-manifest.txt
-          echo "BUILD_TIME=${BUILD_TIME}" >> ../build-manifest.txt
-          echo "GITHUB_RUN_ID=${{ github.run_id }}" >> ../build-manifest.txt
           cd ..
       
       - name: Upload build artifacts
