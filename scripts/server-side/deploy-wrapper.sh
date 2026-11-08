@@ -132,7 +132,8 @@ validate_archive_contents() {
         # 其他未知类型也拒绝
         log_error "归档包含未知文件类型: $line"
         return 1
-    done < <(tar -tvzf "${archive_file}" 2>&1)
+    # stderr 单独丢弃：macOS/GNU tar 的 warning 不能当 listing 行解析
+    done < <(tar -tvzf "${archive_file}" 2>/dev/null)
     
     log_info "归档内容验证通过: ${member_count} 个成员"
 }
@@ -149,17 +150,17 @@ extract_archive() {
     mkdir -p "${extract_dir}"
     chown nobody:nogroup "${extract_dir}"
     
-    # 以 nobody 权限解压
+    # 以 nobody 权限解压（stdout 必须干净，供调用方 $() 捕获路径）
     if ! sudo -u nobody tar -xzf "${archive_file}" \
          -C "${extract_dir}" \
          --no-same-owner \
          --no-same-permissions \
-         2>&1 >&2; then
+         >/dev/null; then
         log_error "解压归档失败"
         return 1
     fi
     
-    echo "${extract_dir}"
+    printf '%s\n' "${extract_dir}"
 }
 
 # 严格验证提取的内容
@@ -271,7 +272,7 @@ validate_extracted() {
     
     if [[ $symlink_count -gt 0 ]]; then
         log_error "提取目录包含软链接"
-        find "${extract_dir}" -type l 2>&1 >&2
+        find "${extract_dir}" -type l >&2
         return 1
     fi
     

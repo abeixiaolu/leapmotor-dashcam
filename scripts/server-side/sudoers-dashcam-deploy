@@ -1,0 +1,6 @@
+# Install: visudo -f /etc/sudoers.d/dashcam-deploy  (mode 0440)
+# Critical: disable use_pty so binary stdin is not relayed through a PTY.
+# Global `Defaults use_pty` + high-RTT SSH collapses archive upload throughput
+# (~10KB/s), so deploy hangs at "等待构建归档…" until the job times out.
+Defaults!/usr/local/bin/dashcam-deploy !use_pty
+dashcam-deploy ALL=(root) NOPASSWD:NOSETENV: /usr/local/bin/dashcam-deploy

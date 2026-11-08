@@ -101,9 +101,16 @@ package_build() {
     local package_file="${package_dir}/build-package.tar.gz"
     
     # 从外部打包暂存目录（避免污染 stdout）
+    # GNU tar 支持 --warning；BSD tar（macOS）不支持，探测后按需加入
+    local tar_extra=()
+    if tar --help 2>&1 | grep -q -- '--warning'; then
+        tar_extra+=(--warning=no-file-changed)
+    fi
+    # macOS: 避免把 xattr 打进归档，污染 Linux tar -t 解析
+    export COPYFILE_DISABLE=1
     tar -C "${staging_dir}" \
         -czf "${package_file}" \
-        --warning=no-file-changed \
+        "${tar_extra[@]}" \
         --exclude='*.mp4' \
         --exclude='*.webm' \
         --exclude='recordings' \
@@ -136,11 +143,13 @@ deploy_to_server() {
     
     # 通过 SSH 管道传输构建包到服务器端包装脚本
     # 服务器输出到 stderr，避免污染 stdout
+    # 全部输出到 stderr；勿写 >&2（会把两端都指到 stdout）
     if cat "${package_file}" | \
         ssh -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             -o IdentitiesOnly=yes \
-            "${DEPLOY_USER}@${DEPLOY_HOST}" 2>&1 >&2; then
+            -o IPQoS=throughput \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" >&2; then
         log_info "部署成功"
         return 0
     else
@@ -210,7 +219,7 @@ cleanup() {
     temp_dir=$(dirname "${package_file}")
     
     if [[ -d "$temp_dir" ]] && [[ "$temp_dir" == /tmp/* ]]; then
-        rm -rf "$temp_dir" 2>&1 >&2
+        rm -rf "$temp_dir" >&2
         log_info "临时文件已清理"
     fi
 }

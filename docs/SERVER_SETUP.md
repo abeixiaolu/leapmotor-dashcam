@@ -58,6 +58,7 @@ EOF
 ```
 
 **安装后的文件布局**：
+
 ```
 /usr/local/bin/dashcam-deploy           # 主部署脚本（755, root:root）
 /usr/local/lib/dashcam/fingerprint.sh   # 共享指纹计算库（644, root:root）
@@ -72,6 +73,10 @@ visudo -f /etc/sudoers.d/dashcam-deploy
 添加以下内容：
 
 ```
+# 关键：必须关闭 use_pty。全局 Defaults use_pty 会把 stdin 经 PTY 中继，
+# 在 GitHub Actions（高 RTT）→ 国内服务器链路上把 ~10MB 归档吞吐压到 ~10KB/s，
+# 表现为「等待构建归档…」后 head -c 长时间无 EOF，最终 job timeout。
+Defaults!/usr/local/bin/dashcam-deploy !use_pty
 dashcam-deploy ALL=(root) NOPASSWD:NOSETENV: /usr/local/bin/dashcam-deploy
 ```
 
@@ -95,6 +100,7 @@ command="sudo /usr/local/bin/dashcam-deploy",no-port-forwarding,no-X11-forwardin
 ```
 
 **重要**：
+
 - `<公钥内容>` 替换为步骤 6 生成的公钥
 - `command=` 强制执行固定命令
 - `no-pty` 禁止交互式终端
@@ -156,19 +162,19 @@ ssh -i ~/.ssh/github_deploy_ed25519 dashcam-deploy@124.223.96.15 ls /
 
 在 GitHub 仓库设置中添加（Settings → Secrets and variables → Actions → Secrets）：
 
-| Secret 名称 | 值 |
-|------------|---|
-| `DEPLOY_SSH_KEY` | 步骤 6 中 `cat ~/.ssh/github_deploy_ed25519` 的完整输出 |
+| Secret 名称              | 值                                                                                               |
+| ------------------------ | ------------------------------------------------------------------------------------------------ |
+| `DEPLOY_SSH_KEY`         | 步骤 6 中 `cat ~/.ssh/github_deploy_ed25519` 的完整输出                                          |
 | `DEPLOY_SSH_KNOWN_HOSTS` | `124.223.96.15 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOrUXRIcEVO3c0bjADU8/LzpqNt/CrebxbCp+PWq5H08` |
 
 ### GitHub Variables
 
 在 GitHub 仓库设置中添加（Settings → Secrets and variables → Actions → Variables）：
 
-| Variable 名称 | 值 |
-|--------------|---|
+| Variable 名称 | 值               |
+| ------------- | ---------------- |
 | `DEPLOY_USER` | `dashcam-deploy` |
-| `DEPLOY_HOST` | `124.223.96.15` |
+| `DEPLOY_HOST` | `124.223.96.15`  |
 
 ## 安全特性
 
@@ -208,6 +214,7 @@ mv -Tf /srv/dashcam/current.tmp /srv/dashcam/current
 ### SSH 连接失败
 
 检查：
+
 1. 公钥是否添加到 `/home/dashcam-deploy/.ssh/authorized_keys`
 2. `.ssh` 目录权限：`700`
 3. `authorized_keys` 权限：`600`
@@ -216,6 +223,7 @@ mv -Tf /srv/dashcam/current.tmp /srv/dashcam/current
 ### sudo 失败
 
 检查：
+
 1. `/etc/sudoers.d/dashcam-deploy` 存在
 2. 文件权限：`440` 或 `400`
 3. 使用 `visudo -c -f /etc/sudoers.d/dashcam-deploy` 验证语法
@@ -223,6 +231,7 @@ mv -Tf /srv/dashcam/current.tmp /srv/dashcam/current
 ### 部署失败
 
 检查：
+
 1. `/usr/local/bin/dashcam-deploy` 存在且可执行
 2. `/var/tmp/dashcam-staging` 存在且权限正确（`1777`）
 3. 磁盘空间充足
