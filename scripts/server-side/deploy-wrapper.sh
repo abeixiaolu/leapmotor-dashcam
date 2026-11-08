@@ -403,8 +403,9 @@ atomic_switch() {
         echo "" > "${DEPLOY_PATH}/.previous-release"
     fi
     
-    # 创建临时符号链接
-    ln -snf "${release_dir}" "${CURRENT_LINK}.tmp"
+    # 使用相对符号链接（容器把 /srv/dashcam 挂为 /srv，绝对路径 /srv/dashcam/... 会断）
+    local rel_target="releases/${release_name}"
+    ln -snf "${rel_target}" "${CURRENT_LINK}.tmp"
     
     # 原子性重命名
     if ! mv -Tf "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"; then
@@ -520,7 +521,10 @@ rollback() {
         return 1
     fi
     
-    ln -snf "$previous_release" "${CURRENT_LINK}.tmp"
+    # previous_release 存的是绝对路径；写成相对 releases/<name> 以兼容容器挂载
+    local prev_name
+    prev_name=$(basename "$previous_release")
+    ln -snf "releases/${prev_name}" "${CURRENT_LINK}.tmp"
     mv -Tf "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"
     
     log_info "已回滚到: $previous_release"
