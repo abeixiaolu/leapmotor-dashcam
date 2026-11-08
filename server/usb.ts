@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { access, mkdir, readdir, realpath, rename, stat, unlink } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -51,14 +51,33 @@ export function parseRange(
   start = Math.max(0, start);
   return { start, end };
 }
+const loopbackAddresses = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+const stripMapped = (address: string) =>
+  address.startsWith("::ffff:") ? address.slice("::ffff:".length) : address;
+/** Loopback or RFC1918 private IPv4 (LAN phones talking to the Mac). */
+export function isTrustedAddress(address: string | undefined): boolean {
+  if (!address) return true;
+  if (loopbackAddresses.has(address)) return true;
+  const ip = stripMapped(address);
+  if (loopbackAddresses.has(ip) || ip === "127.0.0.1") return true;
+  const parts = ip.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255))
+    return false;
+  const [a, b] = parts;
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+export function isTrustedHost(hostname: string): boolean {
+  if (["localhost", "127.0.0.1", "[::1]"].includes(hostname)) return true;
+  return isTrustedAddress(hostname);
+}
+/** Allow same-machine and same-LAN private network access; still block public WAN / DNS rebinding. */
 export function isLocalRequest(req: Pick<IncomingMessage, "headers" | "socket">): boolean {
   const host = req.headers.host;
   if (!host) return false;
-  const address = req.socket.remoteAddress;
-  if (address && !["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(address)) return false;
+  if (!isTrustedAddress(req.socket.remoteAddress)) return false;
   try {
     const target = new URL(`http://${host}`);
-    if (!["localhost", "127.0.0.1", "[::1]"].includes(target.hostname)) return false;
+    if (!isTrustedHost(target.hostname)) return false;
     if (req.headers.origin && new URL(req.headers.origin).host !== target.host) return false;
     if (
       req.headers["sec-fetch-site"] &&
@@ -338,6 +357,48 @@ export class UsbLibrary {
     job.touched = Date.now();
     return join(this.cache, `${id}.mp4`);
   }
+  /** Accept a phone/browser-uploaded .h264 into the cache and register it as a source. */
+  async importRecording(
+    id: string,
+    name: string,
+    body: IncomingMessage,
+  ): Promise<{ id: string; size: number }> {
+    if (!/^[a-f0-9]{24}$/.test(id)) throw Error("无效的录像编号。");
+    if (!/\.h264$/i.test(name) || name.includes("/") || name.includes("\\"))
+      throw Error("仅支持上传 .h264 录像文件。");
+    await mkdir(this.cache, { recursive: true, mode: 0o700 });
+    const target = join(this.cache, `import-${id}.h264`);
+    const partial = join(this.cache, `import-${id}.partial.h264`);
+    await unlink(partial).catch(() => {});
+    await new Promise<void>((resolve, reject) => {
+      const stream = createWriteStream(partial, { mode: 0o600 });
+      let size = 0;
+      const max = 2 * 1024 ** 3;
+      const onData = (chunk: Buffer | string) => {
+        size += typeof chunk === "string" ? Buffer.byteLength(chunk) : chunk.length;
+        if (size > max) {
+          body.off("data", onData);
+          stream.destroy();
+          body.destroy();
+          reject(Error("录像过大，超过 2GB 限制。"));
+        }
+      };
+      body.on("data", onData);
+      body.on("error", reject);
+      stream.on("error", reject);
+      stream.on("finish", () => resolve());
+      body.pipe(stream);
+    });
+    await rename(partial, target);
+    const info = await stat(target);
+    if (!info.size) {
+      await unlink(target).catch(() => {});
+      throw Error("上传的录像是空文件。");
+    }
+    this.sources.set(id, { path: target, size: info.size, mtimeMs: info.mtimeMs });
+    this.jobs.delete(id);
+    return { id, size: info.size };
+  }
   dispose() {
     this.disposed = true;
     this.queue = [];
@@ -356,11 +417,24 @@ export function usbPlugin(): Plugin {
   const library = new UsbLibrary();
   const middleware = async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     if (!req.url?.startsWith("/api/")) return next();
-    if (!isLocalRequest(req)) return json(res, 403, { error: "仅允许本机同源访问 U 盘。" });
+    if (!isLocalRequest(req))
+      return json(res, 403, { error: "仅允许本机或同一局域网私网访问 U 盘。" });
     const path = req.url.split("?")[0];
     try {
       if (path === "/api/drives" && req.method === "GET")
         return json(res, 200, { drives: await library.scan() });
+      const imported = path.match(/^\/api\/import\/([a-f0-9]{24})$/);
+      if (imported && req.method === "POST") {
+        const rawName = String(req.headers["x-recording-name"] || "clip.h264");
+        let name = rawName;
+        try {
+          name = decodeURIComponent(rawName);
+        } catch {
+          name = rawName;
+        }
+        const result = await library.importRecording(imported[1], name, req);
+        return json(res, 200, result);
+      }
       const prepare = path.match(/^\/api\/recordings\/([a-f0-9]{24})\/prepare$/);
       if (prepare && ["GET", "POST"].includes(req.method || "")) {
         const { touched: _touched, ...job } = await library.prepare(

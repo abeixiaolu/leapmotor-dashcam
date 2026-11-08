@@ -1,9 +1,10 @@
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { useEffect, useRef, useState } from "react";
-import { Maximize, Minimize, ArrowUpRight, Play, Pause } from "./icons";
+import { Play, Pause } from "./icons";
 import { directions, labels, clock } from "./library";
 import type { Direction } from "./library";
 import { quadrants } from "./mosaicMath";
+
 type Props = {
   src: string;
   playing: boolean;
@@ -19,7 +20,15 @@ type Props = {
   onDuration: (n: number) => void;
   onPlaying: (b: boolean) => void;
   onError: (s: string) => void;
+  onStageChange?: (active: boolean) => void;
 };
+
+export type MosaicPlayerHandle = {
+  enterStage: () => void;
+  exitStage: () => void;
+  isStage: () => boolean;
+};
+
 function View({
   frameSerial,
   video,
@@ -148,25 +157,34 @@ function View({
     <canvas ref={canvasRef} className="mosaic-canvas" aria-label={`${labels[direction]}录像画面`} />
   );
 }
-export function MosaicPlayer(p: Props) {
+
+export const MosaicPlayer = forwardRef<MosaicPlayerHandle, Props>(function MosaicPlayer(p, ref) {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const frameSerial = useRef(0);
-  const sections = useRef<Partial<Record<Direction, HTMLElement>>>({});
-  const [full, setFull] = useState<Direction | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  /** off = normal; stage = whole player fullscreen */
+  const [mode, setMode] = useState<"off" | "stage">("off");
   const nativeFull = useRef(false);
   const callbacks = useRef(p);
   callbacks.current = p;
+
   useEffect(() => {
     const handler = () => {
       if (document.fullscreenElement) nativeFull.current = true;
       else if (nativeFull.current) {
         nativeFull.current = false;
-        setFull(null);
+        setMode("off");
       }
     };
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
+
+  useEffect(() => {
+    p.onStageChange?.(mode !== "off");
+    return () => p.onStageChange?.(false);
+  }, [mode, p.onStageChange]);
+
   useEffect(() => {
     if (!video) return;
     video.playbackRate = p.rate;
@@ -179,12 +197,14 @@ export function MosaicPlayer(p: Props) {
       });
     } else video.pause();
   }, [video, p.playing, p.rate, p.src]);
+
   useEffect(() => {
     if (video && video.readyState >= 1) {
       video.currentTime = Math.max(0, Math.min(p.seek.time, video.duration));
       callbacks.current.onTime(video.currentTime);
     }
   }, [video, p.seek.token, p.seek.time]);
+
   useEffect(() => {
     if (!video) return;
     let raf = 0,
@@ -232,45 +252,76 @@ export function MosaicPlayer(p: Props) {
       video.removeEventListener("pause", notify);
     };
   }, [video]);
+
   const togglePlayback = () => {
     if (!video) return;
     if (video.ended || video.currentTime >= video.duration) video.currentTime = 0;
     p.onPlaying(!p.playing);
   };
+
+  async function enterStage() {
+    setMode("stage");
+    try {
+      await gridRef.current?.requestFullscreen();
+      nativeFull.current = Boolean(document.fullscreenElement);
+    } catch {
+      nativeFull.current = false;
+    }
+  }
+
+  async function exitStage() {
+    setMode("off");
+    if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+  }
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      enterStage: () => {
+        void enterStage();
+      },
+      exitStage: () => {
+        void exitStage();
+      },
+      isStage: () => mode !== "off",
+    }),
+    [mode],
+  );
+
   useEffect(() => {
-    if (!full) return;
+    if (mode === "off") return;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setFull(null);
-        if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
-      }
+      if (event.key !== "Escape") return;
+      void exitStage();
     };
     window.addEventListener("keydown", escape);
     return () => {
       document.body.style.overflow = overflow;
       window.removeEventListener("keydown", escape);
     };
-  }, [full]);
-  async function fullscreen(d: Direction) {
-    if (full) {
-      setFull(null);
-      if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
-      return;
-    }
-    setFull(d);
-    try {
-      await sections.current[d]?.requestFullscreen();
-      nativeFull.current = Boolean(document.fullscreenElement);
-    } catch {
-      // The viewport overlay remains usable when the host disallows native fullscreen.
-      nativeFull.current = false;
-    }
-  }
+  }, [mode]);
+
+  const stageActive = mode !== "off";
 
   return (
-    <div className={`camera-grid mosaic-grid layout-${p.layout}`}>
+    <div
+      ref={gridRef}
+      className={`camera-grid mosaic-grid layout-${p.layout}${stageActive ? " is-stage-fullscreen" : ""}`}
+      onKeyDown={(event) => {
+        if (
+          !stageActive ||
+          event.code !== "Space" ||
+          (event.target instanceof HTMLElement &&
+            event.target.matches("input,select,textarea,button"))
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        togglePlayback();
+      }}
+    >
       <video
         ref={setVideo}
         src={p.src || undefined}
@@ -283,25 +334,7 @@ export function MosaicPlayer(p: Props) {
         onError={() => p.onError("视频解码失败，请重新载入片段。")}
       />
       {directions.map((d) => (
-        <section
-          ref={(el) => {
-            if (el) sections.current[d] = el;
-          }}
-          key={d}
-          onKeyDown={(event) => {
-            if (
-              full !== d ||
-              event.code !== "Space" ||
-              (event.target instanceof HTMLElement &&
-                event.target.matches("input,select,textarea,button"))
-            )
-              return;
-            event.preventDefault();
-            event.stopPropagation();
-            togglePlayback();
-          }}
-          className={`camera camera-${d} ${p.primary === d ? "is-primary" : ""} ${full === d ? "is-fullscreen" : ""}`}
-        >
+        <section key={d} className={`camera camera-${d}${p.primary === d ? " is-primary" : ""}`}>
           <View
             frameSerial={frameSerial}
             video={video}
@@ -320,46 +353,42 @@ export function MosaicPlayer(p: Props) {
             <span>
               <i className="green-dot" />
               {labels[d]}
+              {p.primary === d ? <small>主视角</small> : null}
             </span>
-            <button aria-label={`${labels[d]}全屏`} onClick={() => void fullscreen(d)}>
-              {full === d ? <Minimize size={16} /> : <Maximize size={16} />}
-            </button>
           </div>
-          {full === d && (
-            <div className="fullscreen-transport" onKeyDown={(event) => event.stopPropagation()}>
-              <button aria-label={p.playing ? "全屏暂停" : "全屏播放"} onClick={togglePlayback}>
-                {p.playing ? <Pause size={20} /> : <Play size={20} />}
-              </button>
-              <span>{clock(video?.currentTime || 0)}</span>
-              <input
-                aria-label="全屏播放进度"
-                type="range"
-                min={0}
-                max={Number.isFinite(video?.duration) ? video!.duration : 1}
-                step={0.04}
-                value={video?.currentTime || 0}
-                onChange={(event) => {
-                  if (video) {
-                    video.currentTime = Number(event.target.value);
-                    p.onTime(video.currentTime);
-                  }
-                }}
-              />
-              <span>{clock(Number.isFinite(video?.duration) ? video!.duration : 0)}</span>
-            </div>
-          )}
-          <button className="camera-promote" onClick={() => p.onPrimary(d)}>
-            {p.primary === d ? (
-              "主视角"
-            ) : (
-              <>
-                <ArrowUpRight size={12} />
-                放大
-              </>
-            )}
-          </button>
         </section>
       ))}
+      {stageActive && (
+        <div className="fullscreen-transport" onKeyDown={(event) => event.stopPropagation()}>
+          <button aria-label={p.playing ? "全屏暂停" : "全屏播放"} onClick={togglePlayback}>
+            {p.playing ? <Pause size={20} /> : <Play size={20} />}
+          </button>
+          <span>{clock(video?.currentTime || 0)}</span>
+          <input
+            aria-label="全屏播放进度"
+            type="range"
+            min={0}
+            max={Number.isFinite(video?.duration) ? video!.duration : 1}
+            step={0.04}
+            value={video?.currentTime || 0}
+            onChange={(event) => {
+              if (video) {
+                video.currentTime = Number(event.target.value);
+                p.onTime(video.currentTime);
+              }
+            }}
+          />
+          <span>{clock(Number.isFinite(video?.duration) ? video!.duration : 0)}</span>
+          <button
+            type="button"
+            className="fs-secondary-btn"
+            aria-label="退出放大"
+            onClick={() => void exitStage()}
+          >
+            退出
+          </button>
+        </div>
+      )}
     </div>
   );
-}
+});

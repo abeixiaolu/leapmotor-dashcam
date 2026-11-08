@@ -3,7 +3,11 @@
   "style": "new-york",
   "rsc": false,
   "tsx": true,
-  "tailwind": { "css": "src/style.css", "baseColor": "neutral", "cssVariables": true },
+  "tailwind": {
+    "css": "src/style.css",
+    "baseColor": "neutral",
+    "cssVariables": true
+  },
   "aliases": {
     "components": "@/components",
     "utils": "@/lib/utils",
@@ -11,5 +15,8 @@
     "lib": "@/lib",
     "hooks": "@/hooks"
   },
-  "iconLibrary": "lucide"
+  "iconLibrary": "lucide",
+  "registries": {
+    "@react-bits": "https://reactbits.dev/r/{name}.json"
+  }
 }

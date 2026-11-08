@@ -69,9 +69,18 @@ describe("本地边界", () => {
     expect(isLocalRequest(request("localhost:5174", "http://localhost:5174"))).toBe(true);
     expect(isLocalRequest(request("127.0.0.1:5174"))).toBe(true);
   });
-  it("拒绝远程、跨域和 DNS rebinding", () => {
+  it("允许同一局域网私网访问", () => {
+    expect(isLocalRequest(request("192.168.31.105:43123", undefined, "192.168.31.20"))).toBe(true);
+    expect(
+      isLocalRequest(
+        request("192.168.31.105:43123", "http://192.168.31.105:43123", "192.168.31.20"),
+      ),
+    ).toBe(true);
+  });
+  it("拒绝公网、跨域和 DNS rebinding", () => {
     expect(isLocalRequest(request("evil.test:5174"))).toBe(false);
     expect(isLocalRequest(request("localhost:5174", "https://evil.test"))).toBe(false);
-    expect(isLocalRequest(request("localhost:5174", undefined, "192.168.1.2"))).toBe(false);
+    expect(isLocalRequest(request("evil.test:5174", undefined, "192.168.1.2"))).toBe(false);
+    expect(isLocalRequest(request("8.8.8.8:5174", undefined, "8.8.8.8"))).toBe(false);
   });
 });

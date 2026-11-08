@@ -1,6 +1,6 @@
 # 零跑记录仪
 
-本地 React + React Bits 工作台，已适配本机零跑 U 盘的 `driverecord` / `sentinel` 原始 `.h264` 四路合成录像。启动后自动扫描，无需选择文件夹。
+基于 Vite+、React 和 TanStack Router 的本地 SPA 工作台，已适配本机零跑 U 盘的 `driverecord` / `sentinel` 原始 `.h264` 四路合成录像。启动后自动扫描，无需选择文件夹。
 
 ## 打开
 
@@ -11,9 +11,11 @@ vp install
 vp run start
 ```
 
-本机需要 FFmpeg / FFprobe（已安装在 `/opt/homebrew/bin/`）。目前自动发现使用 macOS `/Volumes`，不支持部署成远端纯静态网页后访问电脑 U 盘。
+本机需要 FFmpeg / FFprobe（已安装在 `/opt/homebrew/bin/`）。自动发现使用 macOS `/Volumes`，并允许同一局域网私网设备访问本机服务。iPhone Safari 若 U 盘插在手机上，请用页面上的「选择文件夹」从「文件」App 授权（`webkitdirectory`）；首次播放会把该段 `.h264` 传到电脑封装缓存。不支持部署成公网纯静态页后访问 U 盘。
 
 ## 使用
+
+页面使用 TanStack Router 管理：列表位于 `/`，录像详情位于 `/recordings/<录像 ID>`，支持刷新和浏览器前进、后退。详情地址依赖本地服务和对应 U 盘。
 
 - 插入 U 盘后最多约 8 秒自动发现；行车与哨兵分开浏览，可以搜索日期或时间。
 - 默认一路大画面、右侧三路预览，点击任一小画面切换主视角；也可切换四宫格。
@@ -47,4 +49,4 @@ vp run build
 
 测试包括真实命名、目录扫描、文件断开、字节范围请求、访问边界、镜头采样数学，以及真实 FFmpeg 裸流封装回归。浏览器验收使用 U 盘真实录像，测试缓存留在电脑临时目录，不放入项目或版本库。
 
-React Bits SpotlightCard 的原始许可证见 `src/components/REACT_BITS_LICENSE.md`。
+UI 基于 [BoardUI](https://www.boardui.com/)（绿色 accent），本地开发可用 `pnpm run dev:lan`（`0.0.0.0:43123`）。

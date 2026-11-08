@@ -1,7 +1,7 @@
-import * as Slider from "@radix-ui/react-slider";
-import * as Select from "@radix-ui/react-select";
-import * as Switch from "@radix-ui/react-switch";
-import { Check, ChevronRight } from "../icons";
+import { Select, SelectItem } from "@/components/base/select/select";
+import { Slider } from "@/components/base/slider/slider";
+import { Switch } from "@/components/base/switch/switch";
+import { cx } from "@/utils/cx";
 
 export function PlayerSlider({
   label,
@@ -11,6 +11,8 @@ export function PlayerSlider({
   step = 1,
   disabled,
   onChange,
+  className,
+  showTooltip = false,
 }: {
   label: string;
   value: number;
@@ -19,22 +21,22 @@ export function PlayerSlider({
   step?: number;
   disabled?: boolean;
   onChange: (value: number) => void;
+  className?: string;
+  showTooltip?: boolean;
 }) {
   return (
-    <Slider.Root
-      className="control-slider"
-      min={min}
-      max={max}
+    <Slider
+      aria-label={label}
+      thumbLabel={label}
+      minValue={min}
+      maxValue={max}
       step={step}
-      value={[value]}
-      disabled={disabled}
-      onValueChange={([next]) => onChange(next)}
-    >
-      <Slider.Track className="control-slider-track">
-        <Slider.Range className="control-slider-range" />
-      </Slider.Track>
-      <Slider.Thumb className="control-slider-thumb" aria-label={label} />
-    </Slider.Root>
+      value={value}
+      isDisabled={disabled}
+      onChange={onChange}
+      showTooltip={showTooltip}
+      className={cx("min-w-0", className)}
+    />
   );
 }
 
@@ -46,34 +48,24 @@ export function PlaybackSpeed({
   onChange: (value: number) => void;
 }) {
   return (
-    <Select.Root value={String(value)} onValueChange={(next) => onChange(Number(next))}>
-      <Select.Trigger className="speed-trigger" aria-label="播放倍速">
-        <Select.Value />
-        <Select.Icon>
-          <ChevronRight size={16} />
-        </Select.Icon>
-      </Select.Trigger>
-      <Select.Portal>
-        <Select.Content
-          className="speed-menu"
-          position="popper"
-          side="top"
-          align="end"
-          sideOffset={8}
-        >
-          <Select.Viewport>
-            {[0.25, 0.5, 1, 1.5, 2, 4].map((rate) => (
-              <Select.Item className="speed-option" key={rate} value={String(rate)}>
-                <Select.ItemText>{rate}× 倍速</Select.ItemText>
-                <Select.ItemIndicator>
-                  <Check size={16} />
-                </Select.ItemIndicator>
-              </Select.Item>
-            ))}
-          </Select.Viewport>
-        </Select.Content>
-      </Select.Portal>
-    </Select.Root>
+    <Select
+      aria-label="播放倍速"
+      selectedKey={String(value)}
+      onSelectionChange={(key) => {
+        if (key != null) onChange(Number(key));
+      }}
+      size="sm"
+      className="w-auto"
+      triggerClassName="min-w-[7.5rem] bg-neutral-800! border-neutral-600! text-neutral-100! shadow-none hover:bg-neutral-700! hover:border-neutral-500!"
+      popoverClassName="z-[160]"
+      renderValue={() => `${value}× 倍速`}
+    >
+      {[0.25, 0.5, 1, 1.5, 2, 4].map((rate) => (
+        <SelectItem key={rate} id={String(rate)} textValue={`${rate}× 倍速`}>
+          {rate}× 倍速
+        </SelectItem>
+      ))}
+    </Select>
   );
 }
 
@@ -84,14 +76,5 @@ export function CorrectionSwitch({
   checked: boolean;
   onChange: (value: boolean) => void;
 }) {
-  return (
-    <Switch.Root
-      className="correction-switch"
-      checked={checked}
-      onCheckedChange={onChange}
-      aria-label="鱼眼画面校正"
-    >
-      <Switch.Thumb className="correction-switch-thumb" />
-    </Switch.Root>
-  );
+  return <Switch isSelected={checked} onChange={onChange} size="md" aria-label="鱼眼画面校正" />;
 }
