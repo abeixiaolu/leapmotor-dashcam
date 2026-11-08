@@ -43,6 +43,103 @@ describe("browser recording library", () => {
   });
 });
 
+describe("asynchronous recording indexing", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // iPhone over LAN HTTP has no crypto.subtle: awaiting the fallback hash
+    // alone only yields microtasks and would still block rendering and input.
+    vi.stubGlobal("crypto", {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("yields before indexing and reports progress without reading video content", async () => {
+    const files = Array.from({ length: 120 }, (_, i) => recording(`${i}.h264`, ""));
+    const reads = files.map((file) => vi.spyOn(file, "arrayBuffer"));
+    const onProgress = vi.fn();
+    const received = vi.fn();
+    const pending = buildDriveFromFiles(files, { onProgress }).then(received);
+    await Promise.resolve();
+    expect(onProgress.mock.calls).toEqual([[0, 120]]);
+    expect(received).not.toHaveBeenCalled();
+
+    await vi.runAllTimersAsync();
+    await pending;
+    expect(onProgress.mock.calls).toEqual([
+      [0, 120],
+      [50, 120],
+      [100, 120],
+      [120, 120],
+    ]);
+    expect(received.mock.calls[0]![0].drive.recordings).toHaveLength(120);
+    for (const read of reads) expect(read).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("handles a queued cancel between batches and allows a fresh import", async () => {
+    const controller = new AbortController();
+    const progress: number[] = [];
+    const files = Array.from({ length: 120 }, (_, i) => recording(`${i}.h264`, ""));
+    const pending = buildDriveFromFiles(files, {
+      signal: controller.signal,
+      onProgress: (processed) => {
+        progress.push(processed);
+        if (processed === 50) setTimeout(() => controller.abort(), 0);
+      },
+    });
+    const cancelled = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await vi.runAllTimersAsync();
+    await cancelled;
+    expect(progress).toEqual([0, 50]);
+    expect(vi.getTimerCount()).toBe(0);
+
+    const replacement = buildDriveFromFiles([recording("new.h264", "")]);
+    await vi.runAllTimersAsync();
+    expect((await replacement).drive.recordings.map((file) => file.name)).toEqual(["new.h264"]);
+  });
+
+  it("cancels the initial yield without leaving timers or completing the library", async () => {
+    const controller = new AbortController();
+    const onProgress = vi.fn();
+    const pending = buildDriveFromFiles([recording("clip.h264", "")], {
+      signal: controller.signal,
+      onProgress,
+    });
+    const cancelled = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await cancelled;
+    expect(onProgress.mock.calls).toEqual([[0, 1]]);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("discards results when cancelled during an asynchronous hash", async () => {
+    let finishHash!: (digest: ArrayBuffer) => void;
+    const digest = vi.fn(
+      () =>
+        new Promise<ArrayBuffer>((resolve) => {
+          finishHash = resolve;
+        }),
+    );
+    vi.stubGlobal("crypto", { subtle: { digest } });
+    const controller = new AbortController();
+    const pending = buildDriveFromFiles([recording("clip.h264", "")], {
+      signal: controller.signal,
+    });
+    const cancelled = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await vi.runAllTimersAsync();
+    expect(digest).toHaveBeenCalledOnce();
+    controller.abort();
+    finishHash(new ArrayBuffer(32));
+    await cancelled;
+    expect(digest).toHaveBeenCalledOnce();
+  });
+});
+
 describe("file picker lifecycle", () => {
   // Model the browser events independently of the OS picker. In particular,
   // returning focus does not mean that iOS has finished importing the directory.
@@ -154,6 +251,29 @@ describe("file picker lifecycle", () => {
     await expect(pickDirectoryFiles()).rejects.toThrow("已停用文件夹导入");
     expect(input.click).not.toHaveBeenCalled();
     expect(input.setAttribute).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("ignores late files from a cancelled picker after starting a new selection", async () => {
+    const previousInput = input;
+    const previous = pickRecordingFiles();
+    abortDirectoryPick();
+    await expect(previous).resolves.toEqual([]);
+
+    input = new FileInput();
+    const received = vi.fn();
+    const pending = pickRecordingFiles().then(received);
+    previousInput.files = [recording("stale.h264", "")];
+    previousInput.dispatchEvent(new Event("change"));
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(received).not.toHaveBeenCalled();
+
+    const files = [recording("fresh.h264", "")];
+    input.files = files;
+    input.dispatchEvent(new Event("change"));
+    await pending;
+    expect(received).toHaveBeenCalledExactlyOnceWith(files);
+    await vi.runOnlyPendingTimersAsync();
     expect(vi.getTimerCount()).toBe(0);
   });
 

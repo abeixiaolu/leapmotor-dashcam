@@ -7,6 +7,7 @@ import Video from "@carbon/icons-react/es/Video.js";
 import ChevronRight from "@carbon/icons-react/es/ChevronRight.js";
 import FolderOpen from "@carbon/icons-react/es/FolderOpen.js";
 import { Button } from "@/components/base/buttons/button";
+import { Spinner } from "@/components/base/spinner/spinner";
 import { Modal, ModalBody, ModalHeader, ModalTrigger } from "@/components/base/modal/modal";
 import {
   SegmentedControl,
@@ -92,6 +93,22 @@ export function RecordingList(p: Props) {
                   </p>
                 )}
               </div>
+              {p.picking && (
+                <div
+                  className="flex items-start gap-3 rounded-xl border border-border-button-default bg-background-secondary-default p-3"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  <Spinner size="sm" aria-hidden className="mt-1" />
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <p className="text-body-2-medium text-text-primary">录像加载中…</p>
+                    <p className="text-caption-1-regular text-text-secondary">
+                      {p.pickProgress || "正在等待所选文件，准备完成后会自动更新列表。"}
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center gap-2">
                 <Usb className="size-4 shrink-0 text-foreground-icon-secondary" aria-hidden />
                 <span className="min-w-0 flex-1 truncate text-body-2-medium text-text-primary">
@@ -130,17 +147,6 @@ export function RecordingList(p: Props) {
                 <p className="text-caption-1-regular text-text-secondary">
                   iPhone 每次最多选择 {p.fileSelectionLimit} 段 .h264
                   录像。请逐个勾选，请勿全选；不支持导入文件夹。
-                </p>
-              )}
-              {p.picking && (
-                <p
-                  className="motion-enter text-caption-1-regular text-text-secondary"
-                  role="status"
-                >
-                  {p.pickProgress ||
-                    (p.fileSelectionLimit
-                      ? `请在 U 盘中选择最多 ${p.fileSelectionLimit} 段录像。`
-                      : "请在系统选择器中选择 U 盘或录像文件夹。")}
                 </p>
               )}
               {p.scanError && (
@@ -274,15 +280,11 @@ export function RecordingList(p: Props) {
                   );
                 })}
               </div>
-            ) : (
+            ) : !p.picking ? (
               <div className="flex flex-col items-center gap-3 px-3 py-8 text-center">
                 <Usb className="size-7 text-foreground-icon-tertiary" aria-hidden />
                 <p className="text-body-2-medium text-text-secondary">
-                  {p.picking
-                    ? p.pickProgress || "正在寻找录像"
-                    : p.drive
-                      ? "这一天没有录像"
-                      : "选择录像，开始回看"}
+                  {p.drive ? "这一天没有录像" : "选择录像，开始回看"}
                 </p>
                 <p className="max-w-xs text-caption-1-regular text-text-tertiary">
                   {p.drive
@@ -322,7 +324,7 @@ export function RecordingList(p: Props) {
                   </>
                 )}
               </div>
-            )}
+            ) : null}
           </div>
         </div>
         <ScrollFade progress={fade.progress} surfaceClassName="from-background-primary-default" />

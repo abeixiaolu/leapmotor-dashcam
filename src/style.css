@@ -514,3 +514,103 @@
 .calendar-heading button > svg {
   opacity: 0.66;
 }
+
+/* Landscape controls use a side rail so the video keeps the available height. */
+@media (max-width: 1100px) and (max-height: 560px) and (orientation: landscape) {
+  .detail-content {
+    max-width: none;
+    padding-inline: max(8px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-right));
+    padding-bottom: 8px;
+  }
+
+  .player,
+  .player.is-stage-fullscreen {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 192px;
+    grid-template-rows: minmax(0, 1fr);
+    height: calc(100dvh - 56px);
+    min-height: 0;
+  }
+
+  .player.is-stage-fullscreen {
+    height: 100dvh;
+    border-radius: 0;
+  }
+
+  .player > .mosaic-grid,
+  .player > .player-placeholder {
+    height: 100%;
+    min-height: 0;
+    aspect-ratio: auto;
+  }
+
+  .player > .mosaic-grid.layout-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+  }
+
+  .player > .transport {
+    min-width: 0;
+    padding: 12px !important;
+    border-top: 0;
+    border-inline-start: 1px solid var(--color-separator-border);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 12px;
+    overflow-y: auto;
+  }
+
+  .transport .timeline {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+
+  .transport .timeline > span:last-child {
+    text-align: end;
+  }
+
+  .transport .timeline-slider {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+  }
+
+  .transport .transport-row {
+    margin-top: 0;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .transport .play-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    justify-items: center;
+    width: 100%;
+    gap: 4px;
+  }
+
+  .transport .play-actions > :first-child {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .transport .play-actions > :last-child {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .transport .view-actions {
+    margin-inline: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .transport .speed {
+    flex-basis: 100%;
+    display: flex;
+    justify-content: center;
+  }
+}

@@ -416,35 +416,67 @@ export function pickDirectoryFiles(signal?: AbortSignal, waitOpts?: WaitOpts): P
   return pickWithWebkitDirectory(signal, waitOpts);
 }
 
-export async function buildDriveFromFiles(files: File[]): Promise<{
+type IndexOptions = {
+  signal?: AbortSignal;
+  onProgress?: (processed: number, total: number) => void;
+};
+
+/** Yield a task even without crypto.subtle, so progress and cancel can update. */
+function yieldForImport(signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, 0);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
+export async function buildDriveFromFiles(
+  files: File[],
+  options: IndexOptions = {},
+): Promise<{
   drive: LocalDrive;
   fileMap: Map<string, File>;
 }> {
   validateRecordingSelection(files);
+  const { signal, onProgress } = options;
+  signal?.throwIfAborted();
   const recordings: LocalRecording[] = [];
   let h264Count = 0;
-  for (const file of files) {
-    if (!/\.h264$/i.test(file.name)) continue;
-    h264Count += 1;
-    if (!file.size) continue;
-    const relative =
-      (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-    let kind = kindFromPath(relative);
-    if (!kind) {
-      // 允许直接多选 .h264（无目录信息）时默认行车
-      kind = "drive";
+  onProgress?.(0, files.length);
+  // Only inspect metadata here. Video reads/remuxing start when a clip is opened.
+  for (let offset = 0; offset < files.length; offset += 50) {
+    await yieldForImport(signal);
+    signal?.throwIfAborted();
+    const batch = files.slice(offset, offset + 50);
+    for (const file of batch) {
+      if (!/\.h264$/i.test(file.name)) continue;
+      h264Count += 1;
+      if (!file.size) continue;
+      const relative =
+        (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+      const kind = kindFromPath(relative) ?? "drive";
+      const id = await hashId(`local:${relative}:${file.size}:${file.lastModified}`);
+      signal?.throwIfAborted();
+      recordings.push({
+        id,
+        name: file.name,
+        stamp: stampForName(file.name),
+        kind,
+        size: file.size,
+        file,
+        relativePath: relative,
+      });
     }
-    const id = await hashId(`local:${relative}:${file.size}:${file.lastModified}`);
-    recordings.push({
-      id,
-      name: file.name,
-      stamp: stampForName(file.name),
-      kind,
-      size: file.size,
-      file,
-      relativePath: relative,
-    });
+    onProgress?.(offset + batch.length, files.length);
   }
+  signal?.throwIfAborted();
   if (!recordings.length) {
     if (h264Count > 0) {
       throw new Error("找到了 .h264 文件，但大小为 0，无法播放。请确认 U 盘已正确挂载后重试。");
@@ -474,6 +506,7 @@ export async function buildDriveFromFiles(files: File[]): Promise<{
   recordings.sort((a, b) => b.stamp.localeCompare(a.stamp));
   const name = volumeNameFromPath(recordings[0]?.relativePath || "") || "已选文件夹";
   const id = await hashId(`local-drive:${name}:${recordings.length}:${recordings[0]?.id}`);
+  signal?.throwIfAborted();
   const fileMap = new Map(recordings.map((r) => [r.id, r.file]));
   return {
     drive: {

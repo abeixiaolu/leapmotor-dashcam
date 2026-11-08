@@ -1,6 +1,7 @@
 import { MotionText, PlaybackIcon, FullscreenIcon, changeCameraLayout } from "@/components/Motion";
 import { useMatch, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { default as RiErrorWarningLine } from "@carbon/icons-react/es/WarningAlt.js";
 import { default as RiMenuLine } from "@carbon/icons-react/es/Menu.js";
 import { default as RiRefreshLine } from "@carbon/icons-react/es/Renew.js";
@@ -82,6 +83,7 @@ export default function App() {
     [drawerOpen, setDrawerOpen] = useState(false);
   const [picking, setPicking] = useState(false);
   const [pickProgress, setPickProgress] = useState("");
+  const [prepareProgress, setPrepareProgress] = useState("");
   const localFilesRef = useRef<Map<string, File>>(new Map());
   const manualSourceRef = useRef(false);
   const [initialScan, setInitialScan] = useState(
@@ -90,8 +92,21 @@ export default function App() {
   const autoRecordingsRef = useRef(new Map<string, Recording>());
   const playerRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState(false);
+  const [fullscreenHint, setFullscreenHint] = useState("");
+  const enterStage = async () => {
+    setStage(true);
+    setFullscreenHint("");
+    if (document.fullscreenElement === playerRef.current) return;
+    try {
+      if (!playerRef.current?.requestFullscreen) throw new Error("Fullscreen unavailable");
+      await playerRef.current.requestFullscreen({ navigationUI: "hide" });
+    } catch {
+      setFullscreenHint("已铺满页面；当前浏览器不允许隐藏地址栏。");
+    }
+  };
   const exitStage = useCallback(() => {
     setStage(false);
+    setFullscreenHint("");
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
   }, []);
   useEffect(() => {
@@ -171,6 +186,13 @@ export default function App() {
   const clip = page === "detail" ? records.find((r) => r.id === selected) : undefined;
   const shown = datedRecords;
   const pickAbortRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      pickGenRef.current += 1;
+      pickAbortRef.current?.abort();
+    },
+    [],
+  );
   const cancelFolderPick = useCallback(() => {
     pickGenRef.current += 1;
     try {
@@ -208,13 +230,19 @@ export default function App() {
         }
         return;
       }
-      setPickProgress(`正在识别 ${files.length} 个文件…`);
-      const { drive, fileMap } = await buildDriveFromFiles(files);
+      const { drive, fileMap } = await buildDriveFromFiles(files, {
+        signal: ac.signal,
+        onProgress: (processed, total) => {
+          if (gen !== pickGenRef.current || ac.signal.aborted) return;
+          setPickProgress(`正在整理录像… 已检查 ${processed} / ${total} 个文件`);
+        },
+      });
       if (gen !== pickGenRef.current || ac.signal.aborted) return;
       manualSourceRef.current = true;
       localFilesRef.current = fileMap;
       setDrives([drive]);
       setDriveId(drive.id);
+      setKind(drive.recordings[0]?.kind ?? "drive");
       setScanError("");
       setPickProgress("");
       setSelected("");
@@ -228,22 +256,24 @@ export default function App() {
     (requestedMode: "directory" | "files") => {
       const mode = iPhoneMode ? "files" : requestedMode;
       // While picking, cancel the live waiter instead of opening another sheet.
-      if (picking) {
+      if (pickAbortRef.current) {
         cancelFolderPick();
         return;
       }
       const gen = ++pickGenRef.current;
       const ac = new AbortController();
       pickAbortRef.current = ac;
-      setPicking(true);
-      setPickProgress(
-        mode === "files"
-          ? iPhoneMode
-            ? `请逐个勾选 1–${IPHONE_RECORDING_LIMIT} 段录像，请勿全选。点「打开」后自动整理。`
-            : "请选择录像文件，完成后自动整理。"
-          : "请进入 U 盘或录像文件夹，点「打开」后自动整理。大目录可能需要较长时间。",
-      );
-      setScanError("");
+      // Commit the loading UI before iOS takes over. Keep click() in this same
+      // user gesture; deferring the picker itself can make Safari block it.
+      flushSync(() => {
+        setPicking(true);
+        setPickProgress(
+          mode === "files"
+            ? "选完点「完成」或「打开」后，系统可能需要一些时间准备文件，列表会自动更新。"
+            : "选择文件夹后会自动整理录像，大目录可能需要较长时间。",
+        );
+        setScanError("");
+      });
 
       const finish = async (files: File[]) => {
         try {
@@ -266,8 +296,8 @@ export default function App() {
           if (gen !== pickGenRef.current || ac.signal.aborted) return;
           setPickProgress(
             mode === "files"
-              ? "正在等待系统交回所选文件，可取消等待。"
-              : "正在等待系统交回所选目录。iPhone 可能需要复制目录，请保持 U 盘连接；可取消等待。",
+              ? "系统正在准备所选文件，请保持 U 盘连接。准备完成后会自动更新列表，可取消等待。"
+              : "系统正在准备所选目录，请保持 U 盘连接。准备完成后会自动更新列表，可取消等待。",
           );
         },
       };
@@ -285,7 +315,7 @@ export default function App() {
         if (pickAbortRef.current === ac) pickAbortRef.current = null;
       });
     },
-    [picking, cancelFolderPick, applyPickedFiles, iPhoneMode],
+    [cancelFolderPick, applyPickedFiles, iPhoneMode],
   );
 
   useEffect(() => {
@@ -353,14 +383,14 @@ export default function App() {
     setTime(0);
     setDuration(0);
     setError("");
-    setPickProgress("");
+    setPrepareProgress("");
     if (!selected || page !== "detail") {
       setStatus("idle");
       return;
     }
     if (initialScan && !manualSourceRef.current) {
       setStatus("preparing");
-      setPickProgress("正在自动扫描 U 盘…");
+      setPrepareProgress("正在自动扫描 U 盘…");
       return;
     }
     const controller = new AbortController();
@@ -371,7 +401,7 @@ export default function App() {
         let localFile = localFilesRef.current.get(selected);
         const autoRecording = autoRecordingsRef.current.get(selected);
         if (!localFile && autoRecording && !manualSourceRef.current) {
-          setPickProgress("正在从 U 盘读取录像…");
+          setPrepareProgress("正在从 U 盘读取录像…");
           const response = await fetch(`/api/local-drives/${encodeURIComponent(selected)}`, {
             signal: controller.signal,
           });
@@ -387,17 +417,18 @@ export default function App() {
         const { prepareRecording } = await import("./media/prepare");
         controller.signal.throwIfAborted();
         const blob = await prepareRecording(localFile, controller.signal, (text) => {
-          if (!controller.signal.aborted) setPickProgress(text);
+          if (!controller.signal.aborted) setPrepareProgress(text);
         });
         if (controller.signal.aborted) return;
         objectURL = URL.createObjectURL(blob);
         setSrc(objectURL);
         setStatus("ready");
-        setPickProgress("");
+        setPlaying(true);
+        setPrepareProgress("");
       } catch (e) {
         if (controller.signal.aborted) return;
         setStatus("error");
-        setPickProgress("");
+        setPrepareProgress("");
         setError(e instanceof Error ? e.message : "读取录像失败");
       }
     };
@@ -617,7 +648,7 @@ export default function App() {
                 </b>
                 <p className="max-w-sm text-body-2-regular text-text-secondary">
                   {status === "preparing"
-                    ? pickProgress || "正在浏览器中处理，U 盘原文件保持不变。"
+                    ? prepareProgress || "正在浏览器中处理，U 盘原文件保持不变。"
                     : status === "error"
                       ? error
                       : page === "list"
@@ -701,7 +732,7 @@ export default function App() {
                     onClick={() => adjacent(1)}
                   />
                 </div>
-                <div className="flex items-center gap-2 ms-auto md:ms-0">
+                <div className="view-actions flex items-center gap-2 ms-auto md:ms-0">
                   <Button
                     variant="ghost"
                     aria-label={stage ? "退出放大" : "放大"}
@@ -710,10 +741,7 @@ export default function App() {
                     disabled={!stage && status !== "ready"}
                     onClick={() => {
                       if (stage) exitStage();
-                      else {
-                        setStage(true);
-                        void playerRef.current?.requestFullscreen?.().catch(() => {});
-                      }
+                      else void enterStage();
                     }}
                   >
                     <FullscreenIcon expanded={stage} />
@@ -727,6 +755,11 @@ export default function App() {
                   </div>
                 </div>
               </div>
+              {fullscreenHint && (
+                <p role="status" className="mt-2 text-caption-1-regular text-text-secondary">
+                  {fullscreenHint}
+                </p>
+              )}
             </div>
           </div>
 
