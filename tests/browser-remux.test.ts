@@ -159,3 +159,57 @@ it("uses measured timing only when timestamps match the packet count", () => {
   expect(remuxTiming(recorded, 49)).toEqual({ numerator: 25, denominator: 1 });
   expect(remuxTiming(undefined, 0)).toEqual({ numerator: 25, denominator: 1 });
 });
+
+it("playback remux without faststart keeps duration, rate, and pixels", async () => {
+  vi.stubGlobal("self", { location: { href: "http://localhost/ffmpeg-core.js" } });
+  const core = await createCore({
+    wasmBinary: await readFile(require.resolve("@ffmpeg/core/wasm")),
+  });
+  const exec = (args: string[]) => {
+    core.exec("-nostdin", "-y", "-v", "error", ...args);
+    const code = core.ret;
+    core.reset();
+    expect(code).toBe(0);
+  };
+  core.FS.mkdir("/input");
+  exec([
+    "-f",
+    "lavfi",
+    "-i",
+    "testsrc2=size=64x64:rate=25",
+    "-frames:v",
+    "50",
+    "-c:v",
+    "libx264",
+    "-preset",
+    "ultrafast",
+    "-bf",
+    "0",
+    "-bsf:v",
+    "h264_metadata=tick_rate=2400000/1:level=60",
+    "-f",
+    "h264",
+    "/input/recording.h264",
+  ]);
+  exec(remuxArguments(25, 1, { faststart: false }));
+  core.ffprobe(
+    "-v",
+    "error",
+    "-count_frames",
+    "-show_entries",
+    "stream=nb_read_frames,avg_frame_rate,level:format=duration",
+    "-of",
+    "json",
+    "output.mp4",
+    "-o",
+    "probe.json",
+  );
+  core.reset();
+  const probe = JSON.parse(core.FS.readFile("probe.json", { encoding: "utf8" }));
+  expect(Number(probe.format.duration)).toBe(2);
+  expect(probe.streams[0]).toMatchObject({
+    nb_read_frames: "50",
+    avg_frame_rate: "25/1",
+    level: 10,
+  });
+}, 30000);

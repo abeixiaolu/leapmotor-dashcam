@@ -7,7 +7,12 @@ export function remuxTiming(recorded: RecordedTiming | undefined, packets: numbe
     : { numerator: 25, denominator: 1 };
 }
 
-export function remuxArguments(numerator: number, denominator: number) {
+export function remuxArguments(
+  numerator: number,
+  denominator: number,
+  options: { faststart?: boolean } = {},
+) {
+  const faststart = options.faststart !== false;
   return [
     "-hide_banner",
     "-loglevel",
@@ -31,8 +36,7 @@ export function remuxArguments(numerator: number, denominator: number) {
     `h264_metadata=tick_rate=${2 * numerator}/${denominator}:level=auto,setts=time_base=1/${numerator}:ts=N*${denominator}:duration=${denominator}`,
     "-video_track_timescale",
     String(numerator),
-    "-movflags",
-    "+faststart",
+    ...(faststart ? ["-movflags", "+faststart"] : []),
     "output.mp4",
   ];
 }

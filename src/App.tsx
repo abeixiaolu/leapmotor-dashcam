@@ -438,6 +438,18 @@ export default function App() {
     }
   }, [datedRecords, selected, page]);
   useEffect(() => {
+    if (!datedRecords.length) return;
+    let cancelled = false;
+    void import("./media/prepare")
+      .then((media) => {
+        if (!cancelled) return media.prefetchPlaybackEngine();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [datedRecords.length]);
+  useEffect(() => {
     setPlaying(false);
     setSrc("");
     preparedFileRef.current = null;

@@ -5,6 +5,20 @@ export type RecordedTiming = {
   duration: number;
   timing: "recorded";
 };
+
+export type TimingScanOptions = {
+  /** Stop after this many Leapmotor SEI timestamps. */
+  maxFrames?: number;
+  /** Stop after reading this many input bytes. */
+  maxBytes?: number;
+};
+
+export type TimingScanResult = {
+  timing?: RecordedTiming;
+  /** Access-unit slice NALs (types 1 and 5) seen in the scanned prefix. */
+  slicePackets: number;
+};
+
 const UUID = new Uint8Array([4, 2, 3, 4, 5, 6, 7, 8, 9, 16, 17, 18, 19, 20, 21, 22]);
 
 /** Leapmotor type-5 SEI: UUID + 28 bytes metadata + LE uint64 epoch milliseconds. */
@@ -42,10 +56,15 @@ function timestampFromSei(bytes: number[]): number | undefined {
   return undefined;
 }
 
-/** Scans Annex-B without accumulating frame payloads. Memory is bounded to one small SEI. */
+/**
+ * Scans Annex-B without accumulating frame payloads.
+ * Memory is bounded to one small SEI. Optional limits sample a prefix so
+ * prepare can avoid a second full-file ffprobe pass before remux.
+ */
 export async function scanRecordingTiming(
   chunks: AsyncIterable<Uint8Array>,
-): Promise<RecordedTiming | undefined> {
+  options: TimingScanOptions = {},
+): Promise<TimingScanResult> {
   let zeros = 0;
   let type: number | undefined;
   let sei: number[] = [];
@@ -54,6 +73,8 @@ export async function scanRecordingTiming(
   let last = 0;
   let count = 0;
   let invalid = false;
+  let slicePackets = 0;
+  let bytes = 0;
   const deltas: number[] = [];
   const finish = () => {
     if (type === 6 && !oversize) {
@@ -74,7 +95,10 @@ export async function scanRecordingTiming(
     oversize = false;
   };
   const append = (value: number) => {
-    if (type === undefined) type = value & 31;
+    if (type === undefined) {
+      type = value & 31;
+      if (type === 1 || type === 5) slicePackets++;
+    }
     if (type === 6 && !oversize) {
       if (sei.length < 4096) sei.push(value);
       else {
@@ -83,7 +107,9 @@ export async function scanRecordingTiming(
       }
     }
   };
+  let stopped = false;
   for await (const chunk of chunks) {
+    bytes += chunk.length;
     for (const value of chunk) {
       if (value === 0) {
         zeros++;
@@ -92,6 +118,12 @@ export async function scanRecordingTiming(
       if (value === 1 && zeros >= 2) {
         finish();
         zeros = 0;
+        // Wait until SEI and slice counts both reach the budget so a
+        // well-formed SEI-before-slice stream is not marked mismatched.
+        if (options.maxFrames && count >= options.maxFrames && slicePackets >= options.maxFrames) {
+          stopped = true;
+          break;
+        }
         continue;
       }
       if (type === 6 || type === undefined) {
@@ -100,19 +132,24 @@ export async function scanRecordingTiming(
       zeros = 0;
       append(value);
     }
+    if (stopped) break;
+    if (options.maxBytes && bytes >= options.maxBytes) break;
   }
   finish();
-  if (invalid || count < 2 || !deltas.length) return undefined;
+  if (invalid || count < 2 || !deltas.length) return { timing: undefined, slicePackets };
   deltas.sort((a, b) => a - b);
   const median = deltas[Math.floor(deltas.length / 2)]!;
   const milliseconds = last - first + median;
   const fps = (count * 1000) / milliseconds;
-  if (fps < 5 || fps > 120) return undefined;
+  if (fps < 5 || fps > 120) return { timing: undefined, slicePackets };
   return {
-    fpsNumerator: count * 1000,
-    fpsDenominator: milliseconds,
-    frameCount: count,
-    duration: milliseconds / 1000,
-    timing: "recorded",
+    slicePackets,
+    timing: {
+      fpsNumerator: count * 1000,
+      fpsDenominator: milliseconds,
+      frameCount: count,
+      duration: milliseconds / 1000,
+      timing: "recorded",
+    },
   };
 }
