@@ -1,0 +1,221 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+# 串行部署仅限生产 job，测试不受影响
+# PR 和 master 使用不同的 concurrency 组
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    name: Test and Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    permissions:
+      contents: read
+    
+    concurrency:
+      group: build-${{ github.ref }}
+      cancel-in-progress: true
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.4'
+      
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '12.18.0'
+          run_install: false
+      
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+      
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Run tests
+        run: pnpm exec vp test run
+        env:
+          NODE_ENV: test
+      
+      - name: Type check
+        run: pnpm run build
+        env:
+          NODE_ENV: production
+      
+      - name: Generate build manifest and inject metadata
+        if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          REVISION="${{ github.sha }}"
+          BUILD_TIME="$(date -u +%Y%m%d-%H%M%S)"
+          
+          cd dist
+          
+          # 步骤 1: 生成清单（排除 health.json，避免循环依赖）
+          find . -type f ! -name 'health.json' | sed 's|^\./||' | sort | while read -r file; do
+            sha256sum "$file"
+          done > ../build-manifest.txt
+          
+          # 步骤 2: 追加 metadata 行
+          echo "REVISION=${REVISION}" >> ../build-manifest.txt
+          echo "BUILD_TIME=${BUILD_TIME}" >> ../build-manifest.txt
+          echo "GITHUB_RUN_ID=${{ github.run_id }}" >> ../build-manifest.txt
+          
+          # 步骤 3: 计算指纹（与 server 一致：基于不含 health.json 的清单）
+          FINGERPRINT=$(sha256sum ../build-manifest.txt | cut -c1-8)
+          VERSION="${REVISION:0:8}-${FINGERPRINT}"
+          
+          # 步骤 4: 注入 metadata 到 health.json
+          if [ -f health.json ]; then
+            sed -i "s/__VERSION_PLACEHOLDER__/${VERSION}/g" health.json
+            sed -i "s/__REVISION_PLACEHOLDER__/${REVISION}/g" health.json
+            sed -i "s/__BUILD_TIME_PLACEHOLDER__/${BUILD_TIME}/g" health.json
+          fi
+          
+          # 步骤 5: 将 health.json 追加到清单（不参与指纹，仅作记录）
+          if [ -f health.json ]; then
+            sha256sum health.json >> ../build-manifest.txt
+          fi
+          
+          cd ..
+      
+      - name: Upload build artifacts
+        if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: |
+            dist/
+            build-manifest.txt
+          retention-days: 30
+          if-no-files-found: error
+
+  deploy-production:
+    name: Deploy to Production
+    needs: test-and-build
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    permissions:
+      contents: read
+    
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    
+    environment:
+      name: production
+      url: https://dashcam.abei.me
+    
+    steps:
+      - name: Checkout deployment scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/deploy-via-wrapper.sh
+            scripts/lib/
+          persist-credentials: false
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: ./
+      
+      - name: Verify secrets and variables
+        run: |
+          # 预检必需的 secrets 和 variables
+          missing=()
+          
+          if [ -z "${{ secrets.DEPLOY_SSH_KEY }}" ]; then
+            missing+=("DEPLOY_SSH_KEY")
+          fi
+          
+          if [ -z "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" ]; then
+            missing+=("DEPLOY_SSH_KNOWN_HOSTS")
+          fi
+          
+          if [ -z "${{ vars.DEPLOY_USER }}" ]; then
+            missing+=("DEPLOY_USER")
+          fi
+          
+          if [ -z "${{ vars.DEPLOY_HOST }}" ]; then
+            missing+=("DEPLOY_HOST")
+          fi
+          
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "错误: 缺少必需的配置"
+            printf '  - %s\n' "${missing[@]}"
+            exit 1
+          fi
+          
+          echo "所有必需的配置已就绪"
+      
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          
+          # 使用 env 变量写入密钥（避免命令行暴露）
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          
+          # 写入已知主机密钥
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          
+          # 配置 SSH 客户端
+          cat > ~/.ssh/config <<'EOF'
+          Host *
+            StrictHostKeyChecking yes
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          EOF
+          chmod 600 ~/.ssh/config
+      
+      - name: Deploy to production
+        env:
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          REVISION: ${{ github.sha }}
+        run: |
+          chmod +x scripts/deploy-via-wrapper.sh
+          ./scripts/deploy-via-wrapper.sh
+      
+      - name: Cleanup SSH keys
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_ed25519
+          rm -f ~/.ssh/known_hosts
