@@ -66,41 +66,64 @@ test_ssh_connection() {
 }
 
 # 打包构建产物
+# stdout: 仅输出单行包路径
+# stderr: 所有日志和错误
 package_build() {
-    log_info "打包构建产物..."
+    log_info "打包构建产物..." >&2
     
-    local temp_dir
-    temp_dir=$(mktemp -d) || {
-        log_error "无法创建临时目录"
+    local staging_dir
+    staging_dir=$(mktemp -d) || {
+        log_error "无法创建暂存目录" >&2
         return 1
     }
     
-    local package_file="${temp_dir}/build-package.tar.gz"
+    # 复制构建产物到暂存目录（所有输出到 stderr）
+    cp -r "${BUILD_DIR}"/* "${staging_dir}/" 2>&2 || {
+        log_error "复制构建产物失败" >&2
+        rm -rf "${staging_dir}"
+        return 1
+    }
     
-    # 复制构建产物到临时目录
-    cp -r "${BUILD_DIR}"/* "${temp_dir}/" 2>&1 >&2
-    cp "${MANIFEST_FILE}" "${temp_dir}/" 2>&1 >&2
+    cp "${MANIFEST_FILE}" "${staging_dir}/" 2>&2 || {
+        log_error "复制清单文件失败" >&2
+        rm -rf "${staging_dir}"
+        return 1
+    }
     
-    # 创建 tar.gz 包
-    (
-        cd "${temp_dir}" || exit 1
-        tar -czf build-package.tar.gz \
-            --exclude='build-package.tar.gz' \
-            --exclude='*.mp4' \
-            --exclude='*.webm' \
-            --exclude='recordings' \
-            --exclude='.env' \
-            --exclude='.env.*' \
-            . 2>&1 >&2
-    )
+    # 在外部创建包文件（避免 "file changed as we read it"）
+    local package_dir
+    package_dir=$(mktemp -d) || {
+        log_error "无法创建打包目录" >&2
+        rm -rf "${staging_dir}"
+        return 1
+    }
     
-    local package_path="${temp_dir}/build-package.tar.gz"
+    local package_file="${package_dir}/build-package.tar.gz"
+    
+    # 从外部打包暂存目录（避免污染 stdout）
+    tar -C "${staging_dir}" \
+        -czf "${package_file}" \
+        --warning=no-file-changed \
+        --exclude='*.mp4' \
+        --exclude='*.webm' \
+        --exclude='recordings' \
+        --exclude='.env' \
+        --exclude='.env.*' \
+        . 2>&2 || {
+        log_error "创建归档失败" >&2
+        rm -rf "${staging_dir}" "${package_dir}"
+        return 1
+    }
+    
+    # 清理暂存目录
+    rm -rf "${staging_dir}"
+    
     local size
-    size=$(stat -f%z "${package_path}" 2>/dev/null || stat -c%s "${package_path}")
-    log_info "构建包创建完成: ${package_path} (${size} bytes)"
+    size=$(stat -f%z "${package_file}" 2>/dev/null || stat -c%s "${package_file}" 2>/dev/null)
+    log_info "构建包创建完成: ${package_file} (${size} bytes)" >&2
     
-    # 返回路径到 stdout（供 main 捕获）
-    printf '%s\n' "${package_path}"
+    # stdout 仅输出包路径（单行，供 main 捕获）
+    printf '%s\n' "${package_file}"
 }
 
 # 部署到服务器
