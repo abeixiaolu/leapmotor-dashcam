@@ -9,10 +9,8 @@ on:
       - master
   workflow_dispatch:
 
-# 串行部署，防止并发覆盖
-concurrency:
-  group: deploy-production
-  cancel-in-progress: false
+# 串行部署仅限生产 job，测试不受影响
+# PR 和 master 使用不同的 concurrency 组
 
 permissions:
   contents: read
@@ -25,6 +23,10 @@ jobs:
     
     permissions:
       contents: read
+    
+    concurrency:
+      group: build-${{ github.ref }}
+      cancel-in-progress: true
     
     steps:
       - name: Checkout code
@@ -93,12 +95,16 @@ jobs:
   deploy-production:
     name: Deploy to Production
     needs: test-and-build
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     
     permissions:
       contents: read
+    
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
     
     environment:
       name: production
@@ -118,16 +124,59 @@ jobs:
           name: dist-${{ github.sha }}
           path: ./
       
+      - name: Verify secrets and variables
+        run: |
+          # 预检必需的 secrets 和 variables
+          missing=()
+          
+          if [ -z "${{ secrets.DEPLOY_SSH_KEY }}" ]; then
+            missing+=("DEPLOY_SSH_KEY")
+          fi
+          
+          if [ -z "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" ]; then
+            missing+=("DEPLOY_SSH_KNOWN_HOSTS")
+          fi
+          
+          if [ -z "${{ vars.DEPLOY_USER }}" ]; then
+            missing+=("DEPLOY_USER")
+          fi
+          
+          if [ -z "${{ vars.DEPLOY_HOST }}" ]; then
+            missing+=("DEPLOY_HOST")
+          fi
+          
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "错误: 缺少必需的配置"
+            printf '  - %s\n' "${missing[@]}"
+            exit 1
+          fi
+          
+          echo "所有必需的配置已就绪"
+      
       - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          
+          # 使用 env 变量写入密钥（避免命令行暴露）
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           
-          # 使用已知的服务器主机密钥
-          echo "${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          # 写入已知主机密钥
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
+          
+          # 配置 SSH 客户端
+          cat > ~/.ssh/config <<'EOF'
+          Host *
+            StrictHostKeyChecking yes
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          EOF
+          chmod 600 ~/.ssh/config
       
       - name: Deploy to production
         env:

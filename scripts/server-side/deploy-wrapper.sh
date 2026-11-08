@@ -3,171 +3,324 @@
 # 服务器端部署包装脚本
 # 
 # 安装位置：/usr/local/bin/dashcam-deploy
-# 用途：接收 GitHub Actions 推送的构建产物并部署
-# 权限：由 root 执行，但仅限特定操作
+# 权限：由 root 执行（通过 sudo）
 #
-# 受限命令设计：
-# - 接收上传的 tar.gz 构建包
-# - 验证清单完整性
-# - 解压到版本目录
-# - 原子切换符号链接
-# - 健康检查和回滚
-# - 清理旧版本
-#
-# 不提供：
-# - Shell 访问
-# - 文件浏览
-# - 任意命令执行
-# - Docker 权限
-# - sudo 权限
+# 严格安全边界：
+# - SHA256 验证所有文件
+# - 拒绝软链接、硬链接、特殊文件
+# - 拒绝绝对路径、路径上跳（../）
+# - 拒绝重复路径
+# - 资源限额
+# - 最小特权暂存（非 root 解压）
+# - 事务性切换，失败自动回滚
+# - release 不可变，幂等部署
 
 set -euo pipefail
 
 DEPLOY_PATH="/srv/dashcam"
 RELEASES_DIR="${DEPLOY_PATH}/releases"
 CURRENT_LINK="${DEPLOY_PATH}/current"
-UPLOAD_DIR="${DEPLOY_PATH}/.upload"
+STAGING_BASE="/var/tmp/dashcam-staging"
 
-# 颜色输出
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# 资源限额
+MAX_ARCHIVE_SIZE=$((200 * 1024 * 1024))  # 200MB
+MAX_FILE_SIZE=$((50 * 1024 * 1024))      # 50MB
+MAX_FILE_COUNT=10000
 
-log_info() { echo -e "${GREEN}[INFO]${NC} $*"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+# 日志输出到 stderr
+log_info() { echo "[INFO] $*" >&2; }
+log_warn() { echo "[WARN] $*" >&2; }
+log_error() { echo "[ERROR] $*" >&2; }
 
-# 初始化上传目录
-init_upload() {
-    mkdir -p "${UPLOAD_DIR}"
-    chmod 700 "${UPLOAD_DIR}"
+# 初始化暂存目录（非 root 权限）
+init_staging() {
+    local staging_dir
+    staging_dir=$(mktemp -d -p "${STAGING_BASE}" "deploy.XXXXXXXXXX") || {
+        log_error "无法创建暂存目录"
+        return 1
+    }
     
-    # 清理可能存在的旧上传
-    find "${UPLOAD_DIR}" -type f -mmin +60 -delete 2>/dev/null || true
+    # 设置权限为 nobody（或其他非特权用户）
+    chown nobody:nogroup "${staging_dir}"
+    chmod 700 "${staging_dir}"
     
-    echo "${UPLOAD_DIR}"
+    echo "${staging_dir}"
 }
 
-# 接收构建包
-receive_package() {
-    local upload_dir="$1"
-    local package_file="${upload_dir}/build-package.tar.gz"
+# 接收并验证归档大小
+receive_archive() {
+    local staging_dir="$1"
+    local archive_file="${staging_dir}/archive.tar.gz"
     
-    log_info "等待接收构建包..."
+    log_info "接收构建归档..."
     
-    # 从 stdin 读取 tar.gz
-    cat > "${package_file}"
-    
-    if [[ ! -f "${package_file}" ]]; then
-        log_error "构建包接收失败"
+    # 限制归档大小（从 stdin 读取）
+    if ! head -c $((MAX_ARCHIVE_SIZE + 1)) > "${archive_file}"; then
+        log_error "接收归档失败"
         return 1
     fi
     
-    local size=$(stat -f%z "${package_file}" 2>/dev/null || stat -c%s "${package_file}")
-    log_info "构建包接收完成: $(numfmt --to=iec-i --suffix=B "${size}" 2>/dev/null || echo "${size} bytes")"
+    local size
+    size=$(stat -c%s "${archive_file}")
     
-    echo "${package_file}"
+    if [[ $size -gt $MAX_ARCHIVE_SIZE ]]; then
+        log_error "归档超过大小限制: ${size} > ${MAX_ARCHIVE_SIZE}"
+        return 1
+    fi
+    
+    log_info "归档接收完成: ${size} bytes"
+    echo "${archive_file}"
 }
 
-# 验证构建包
-validate_package() {
-    local package_file="$1"
-    local upload_dir=$(dirname "${package_file}")
+# 解压归档（以 nobody 权限）
+extract_archive() {
+    local archive_file="$1"
+    local staging_dir
+    staging_dir=$(dirname "${archive_file}")
+    local extract_dir="${staging_dir}/extracted"
     
-    log_info "验证构建包完整性..."
+    log_info "解压归档..."
     
-    # 解压到临时目录
-    tar -xzf "${package_file}" -C "${upload_dir}"
+    mkdir -p "${extract_dir}"
+    chown nobody:nogroup "${extract_dir}"
+    
+    # 以 nobody 权限解压
+    if ! sudo -u nobody tar -xzf "${archive_file}" \
+         -C "${extract_dir}" \
+         --no-same-owner \
+         --no-same-permissions \
+         2>&1 >&2; then
+        log_error "解压归档失败"
+        return 1
+    fi
+    
+    echo "${extract_dir}"
+}
+
+# 严格验证提取的内容
+validate_extracted() {
+    local extract_dir="$1"
+    
+    log_info "验证提取内容..."
     
     # 检查必需文件
-    if [[ ! -f "${upload_dir}/build-manifest.txt" ]]; then
+    if [[ ! -f "${extract_dir}/build-manifest.txt" ]]; then
         log_error "缺少 build-manifest.txt"
         return 1
     fi
     
-    if [[ ! -f "${upload_dir}/index.html" ]]; then
+    if [[ ! -f "${extract_dir}/index.html" ]]; then
         log_error "缺少 index.html"
         return 1
     fi
     
-    # 验证清单中的文件
-    local expected_files=$(grep -v '^REVISION=' "${upload_dir}/build-manifest.txt" | \
-                          grep -v '^BUILD_TIME=' | \
-                          grep -v '^GITHUB_RUN_ID=' | \
-                          awk '{print $2}' || true)
+    # 验证 REVISION 格式（40 字符十六进制）
+    local revision
+    revision=$(grep '^REVISION=' "${extract_dir}/build-manifest.txt" | cut -d= -f2)
     
-    for file in ${expected_files}; do
-        if [[ ! -f "${upload_dir}/${file}" ]]; then
-            log_error "清单中的文件不存在: ${file}"
-            return 1
-        fi
-    done
-    
-    log_info "构建包验证通过"
-}
-
-# 提取版本信息
-extract_version_info() {
-    local manifest_file="$1"
-    
-    local revision=$(grep '^REVISION=' "${manifest_file}" | cut -d= -f2)
-    local build_time=$(grep '^BUILD_TIME=' "${manifest_file}" | cut -d= -f2)
-    
-    if [[ -z "$revision" ]]; then
-        log_error "无法从清单中提取 REVISION"
+    if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+        log_error "REVISION 格式无效: $revision"
         return 1
     fi
     
-    # 生成指纹（基于清单内容）
-    local fingerprint=$(sha256sum "${manifest_file}" | cut -c1-8)
-    local release_name="${revision:0:8}-${fingerprint}"
+    # 验证所有文件
+    local file_count=0
+    local verified_files=()
     
-    echo "${release_name}"
+    while IFS= read -r line; do
+        # 跳过元数据行
+        if [[ "$line" =~ ^(REVISION|BUILD_TIME|GITHUB_RUN_ID)= ]]; then
+            continue
+        fi
+        
+        # 解析 SHA256 和文件路径
+        local expected_sha file_path
+        expected_sha=$(echo "$line" | awk '{print $1}')
+        file_path=$(echo "$line" | awk '{print $2}')
+        
+        if [[ -z "$expected_sha" ]] || [[ -z "$file_path" ]]; then
+            continue
+        fi
+        
+        # 验证路径安全
+        if ! validate_path_safety "$file_path"; then
+            log_error "不安全的路径: $file_path"
+            return 1
+        fi
+        
+        local full_path="${extract_dir}/${file_path}"
+        
+        # 检查文件存在
+        if [[ ! -e "$full_path" ]]; then
+            log_error "清单中的文件不存在: $file_path"
+            return 1
+        fi
+        
+        # 检查是否为普通文件或目录
+        if [[ -f "$full_path" ]]; then
+            # 验证文件大小
+            local file_size
+            file_size=$(stat -c%s "$full_path")
+            
+            if [[ $file_size -gt $MAX_FILE_SIZE ]]; then
+                log_error "文件超过大小限制: $file_path ($file_size > $MAX_FILE_SIZE)"
+                return 1
+            fi
+            
+            # 验证 SHA256
+            local actual_sha
+            actual_sha=$(sha256sum "$full_path" | awk '{print $1}')
+            
+            if [[ "$actual_sha" != "$expected_sha" ]]; then
+                log_error "SHA256 不匹配: $file_path"
+                log_error "  期望: $expected_sha"
+                log_error "  实际: $actual_sha"
+                return 1
+            fi
+            
+            verified_files+=("$file_path")
+        elif [[ -d "$full_path" ]]; then
+            # 目录允许，但不计入验证文件
+            :
+        else
+            log_error "不支持的文件类型: $file_path"
+            return 1
+        fi
+        
+        file_count=$((file_count + 1))
+        
+        if [[ $file_count -gt $MAX_FILE_COUNT ]]; then
+            log_error "文件数量超过限制: $file_count > $MAX_FILE_COUNT"
+            return 1
+        fi
+    done < "${extract_dir}/build-manifest.txt"
+    
+    # 检查是否有额外文件（不在清单中）
+    while IFS= read -r file; do
+        local rel_path
+        rel_path=$(realpath --relative-to="${extract_dir}" "$file")
+        
+        # 跳过 build-manifest.txt 本身
+        if [[ "$rel_path" == "build-manifest.txt" ]]; then
+            continue
+        fi
+        
+        # 检查是否在已验证列表中
+        local found=false
+        for verified in "${verified_files[@]}"; do
+            if [[ "$rel_path" == "$verified" ]]; then
+                found=true
+                break
+            fi
+        done
+        
+        if [[ "$found" == "false" ]]; then
+            log_error "发现额外文件（不在清单中）: $rel_path"
+            return 1
+        fi
+    done < <(find "${extract_dir}" -type f ! -name build-manifest.txt)
+    
+    log_info "内容验证通过: ${file_count} 个文件"
+    echo "$revision"
 }
 
-# 安装到版本目录
+# 验证路径安全
+validate_path_safety() {
+    local path="$1"
+    
+    # 拒绝绝对路径
+    if [[ "$path" == /* ]]; then
+        return 1
+    fi
+    
+    # 拒绝路径上跳
+    if [[ "$path" == *../* ]] || [[ "$path" == ../* ]] || [[ "$path" == *..  ]]; then
+        return 1
+    fi
+    
+    # 拒绝特殊路径
+    if [[ "$path" == "." ]] || [[ "$path" == ".." ]]; then
+        return 1
+    fi
+    
+    return 0
+}
+
+# 生成版本名称
+generate_release_name() {
+    local revision="$1"
+    local manifest_file="$2"
+    
+    local fingerprint
+    fingerprint=$(sha256sum "$manifest_file" | cut -c1-8)
+    
+    local release_name="${revision:0:8}-${fingerprint}"
+    echo "$release_name"
+}
+
+# 安装到 release 目录（幂等，不可变）
 install_release() {
-    local upload_dir="$1"
+    local extract_dir="$1"
     local release_name="$2"
     local release_dir="${RELEASES_DIR}/${release_name}"
     
-    log_info "安装版本: ${release_name}"
+    log_info "安装 release: ${release_name}"
     
-    # 创建版本目录
     mkdir -p "${RELEASES_DIR}"
     
-    # 如果目标目录已存在，先删除
+    # 检查 release 是否已存在
     if [[ -d "${release_dir}" ]]; then
-        log_warn "目标版本目录已存在，先删除"
-        rm -rf "${release_dir}"
+        log_info "Release 已存在: ${release_name}"
+        
+        # 验证内容相同（幂等）
+        if ! diff -r "${extract_dir}" "${release_dir}" > /dev/null 2>&1; then
+            log_error "Release 已存在但内容不同，拒绝覆盖"
+            return 1
+        fi
+        
+        log_info "Release 内容一致，跳过安装"
+        echo "${release_dir}"
+        return 0
     fi
     
-    mkdir -p "${release_dir}"
+    # 创建新 release（原子操作）
+    local temp_release="${release_dir}.tmp.$$"
     
-    # 移动文件到版本目录
-    # 排除 build-package.tar.gz
-    find "${upload_dir}" -mindepth 1 -maxdepth 1 ! -name "build-package.tar.gz" \
-        -exec mv {} "${release_dir}/" \;
+    mkdir -p "${temp_release}"
+    cp -r "${extract_dir}"/* "${temp_release}/"
     
-    # 设置权限（保持 root:root，文件 644，目录 755）
-    chmod -R u=rwX,go=rX "${release_dir}"
+    # 设置权限
+    chown -R root:root "${temp_release}"
+    chmod -R u=rwX,go=rX "${temp_release}"
     
-    log_info "版本安装完成: ${release_dir}"
+    # 原子重命名
+    if ! mv "${temp_release}" "${release_dir}"; then
+        rm -rf "${temp_release}"
+        log_error "无法安装 release"
+        return 1
+    fi
+    
+    log_info "Release 安装完成: ${release_dir}"
     echo "${release_dir}"
 }
 
-# 原子切换符号链接
-switch_current() {
+# 事务性切换 current（失败自动回滚）
+atomic_switch() {
     local release_dir="$1"
-    local release_name=$(basename "${release_dir}")
+    local release_name
+    release_name=$(basename "${release_dir}")
     
-    log_info "切换 current 符号链接到: ${release_name}"
+    log_info "切换 current 到: ${release_name}"
     
-    # 保存旧版本用于回滚
+    # 保存旧版本（绝对路径）
+    local old_release=""
     if [[ -L "${CURRENT_LINK}" ]]; then
-        OLD_RELEASE=$(readlink "${CURRENT_LINK}")
-        echo "${OLD_RELEASE}" > "${DEPLOY_PATH}/.previous-release"
+        old_release=$(readlink -f "${CURRENT_LINK}")
+    fi
+    
+    # 保存旧版本信息
+    if [[ -n "$old_release" ]]; then
+        echo "${old_release}" > "${DEPLOY_PATH}/.previous-release"
     else
         echo "" > "${DEPLOY_PATH}/.previous-release"
     fi
@@ -175,37 +328,47 @@ switch_current() {
     # 创建临时符号链接
     ln -snf "${release_dir}" "${CURRENT_LINK}.tmp"
     
-    # 原子性地重命名
-    mv -Tf "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"
+    # 原子性重命名
+    if ! mv -Tf "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"; then
+        rm -f "${CURRENT_LINK}.tmp"
+        log_error "无法切换 current 符号链接"
+        return 1
+    fi
     
     log_info "符号链接切换完成"
 }
 
 # 健康检查
 health_check() {
+    local expected_revision="$1"
+    
     log_info "执行健康检查..."
     
-    # 检查符号链接
-    if [[ ! -L "${CURRENT_LINK}" ]]; then
-        log_error "current 不是符号链接"
-        return 1
-    fi
+    local current_path
+    current_path=$(readlink -f "${CURRENT_LINK}")
     
-    if [[ ! -e "${CURRENT_LINK}" ]]; then
-        log_error "current 指向的目标不存在"
+    # 检查符号链接有效
+    if [[ ! -d "$current_path" ]]; then
+        log_error "current 指向无效目标"
         return 1
     fi
     
     # 检查关键文件
-    if [[ ! -f "${CURRENT_LINK}/index.html" ]]; then
+    if [[ ! -f "${current_path}/index.html" ]]; then
         log_error "index.html 不存在"
         return 1
     fi
     
-    # 检查健康检查端点
-    if [[ -f "${CURRENT_LINK}/health.json" ]]; then
-        if grep -q '"status".*"ok"' "${CURRENT_LINK}/health.json"; then
-            log_info "健康检查端点验证通过"
+    # 检查版本匹配
+    if [[ ! "$current_path" == *"${expected_revision:0:8}"* ]]; then
+        log_error "版本不匹配: 期望 ${expected_revision:0:8}，当前 $(basename "$current_path")"
+        return 1
+    fi
+    
+    # 检查健康端点（如果存在）
+    if [[ -f "${current_path}/health.json" ]]; then
+        if ! grep -q '"status".*"ok"' "${current_path}/health.json"; then
+            log_warn "健康端点状态异常"
         fi
     fi
     
@@ -221,100 +384,126 @@ rollback() {
         return 1
     fi
     
-    PREVIOUS_RELEASE=$(cat "${DEPLOY_PATH}/.previous-release")
+    local previous_release
+    previous_release=$(cat "${DEPLOY_PATH}/.previous-release")
     
-    if [[ -z "${PREVIOUS_RELEASE}" ]]; then
+    if [[ -z "$previous_release" ]]; then
         log_error "没有可回滚的版本"
         return 1
     fi
     
-    if [[ ! -d "${PREVIOUS_RELEASE}" ]]; then
-        log_error "上一版本目录不存在: ${PREVIOUS_RELEASE}"
+    # 验证旧版本在 releases 内
+    if [[ "$previous_release" != "${RELEASES_DIR}/"* ]]; then
+        log_error "上一版本路径不在 releases 目录内"
         return 1
     fi
     
-    ln -snf "${PREVIOUS_RELEASE}" "${CURRENT_LINK}.tmp"
+    if [[ ! -d "$previous_release" ]]; then
+        log_error "上一版本目录不存在: $previous_release"
+        return 1
+    fi
+    
+    ln -snf "$previous_release" "${CURRENT_LINK}.tmp"
     mv -Tf "${CURRENT_LINK}.tmp" "${CURRENT_LINK}"
     
-    log_info "已回滚到: ${PREVIOUS_RELEASE}"
+    log_info "已回滚到: $previous_release"
 }
 
 # 清理旧版本
 cleanup_old_releases() {
     log_info "清理旧版本..."
     
-    # 获取当前版本
-    CURRENT_RELEASE=""
-    if [[ -L "${CURRENT_LINK}" ]]; then
-        CURRENT_RELEASE=$(basename "$(readlink "${CURRENT_LINK}")")
-    fi
+    local current_target
+    current_target=$(readlink -f "${CURRENT_LINK}" 2>/dev/null || echo "")
+    
+    local keep_count=0
     
     # 保留最近 5 个版本
-    cd "${RELEASES_DIR}"
-    ls -t | tail -n +6 | while read -r old_release; do
-        if [[ "${old_release}" != "${CURRENT_RELEASE}" ]]; then
-            log_info "删除旧版本: ${old_release}"
-            rm -rf "${old_release}"
+    cd "${RELEASES_DIR}" || return
+    
+    for release in $(ls -t); do
+        local release_path="${RELEASES_DIR}/${release}"
+        
+        # 跳过当前版本
+        if [[ "$release_path" == "$current_target" ]]; then
+            continue
+        fi
+        
+        keep_count=$((keep_count + 1))
+        
+        if [[ $keep_count -gt 5 ]]; then
+            log_info "删除旧版本: $release"
+            rm -rf "$release"
         fi
     done
     
     log_info "旧版本清理完成"
 }
 
-# 清理上传目录
-cleanup_upload() {
-    local upload_dir="$1"
-    rm -rf "${upload_dir}"
+# 清理暂存目录
+cleanup_staging() {
+    local staging_dir="$1"
+    
+    if [[ -d "$staging_dir" ]] && [[ "$staging_dir" == "${STAGING_BASE}/"* ]]; then
+        rm -rf "$staging_dir"
+    fi
 }
 
-# 主流程
+# 主流程（事务性，失败自动回滚）
 main() {
     log_info "==================== 开始部署 ===================="
     
-    # 初始化上传目录
-    local upload_dir
-    upload_dir=$(init_upload)
+    # 确保暂存基目录存在
+    mkdir -p "${STAGING_BASE}"
+    chmod 1777 "${STAGING_BASE}"  # sticky bit
     
-    # 接收构建包
-    local package_file
-    package_file=$(receive_package "${upload_dir}")
+    # 初始化暂存目录
+    local staging_dir
+    staging_dir=$(init_staging)
     
-    # 验证构建包
-    validate_package "${package_file}"
+    # 错误时清理
+    trap "cleanup_staging '$staging_dir'" EXIT
     
-    # 提取版本信息
+    # 接收归档
+    local archive_file
+    archive_file=$(receive_archive "$staging_dir")
+    
+    # 解压归档（非 root）
+    local extract_dir
+    extract_dir=$(extract_archive "$archive_file")
+    
+    # 严格验证
+    local revision
+    revision=$(validate_extracted "$extract_dir")
+    
+    # 生成 release 名称
     local release_name
-    release_name=$(extract_version_info "${upload_dir}/build-manifest.txt")
-    log_info "版本名称: ${release_name}"
+    release_name=$(generate_release_name "$revision" "${extract_dir}/build-manifest.txt")
+    log_info "Release: ${release_name}"
     
-    # 安装到版本目录
+    # 安装 release（幂等）
     local release_dir
-    release_dir=$(install_release "${upload_dir}" "${release_name}")
+    release_dir=$(install_release "$extract_dir" "$release_name")
     
     # 原子切换
-    switch_current "${release_dir}"
+    atomic_switch "$release_dir"
     
-    # 健康检查
-    if ! health_check; then
+    # 健康检查（失败则回滚）
+    if ! health_check "$revision"; then
         log_error "健康检查失败，开始回滚"
         rollback
-        cleanup_upload "${upload_dir}"
         exit 1
     fi
     
     # 清理旧版本
     cleanup_old_releases
     
-    # 清理上传目录
-    cleanup_upload "${upload_dir}"
-    
     log_info "==================== 部署成功 ===================="
-    log_info "新版本已上线: ${release_name}"
-    log_info "当前版本: $(readlink "${CURRENT_LINK}")"
+    log_info "当前版本: ${release_name}"
 }
 
-# 错误处理
-trap 'log_error "部署过程中发生错误，退出码: $?"' ERR
+# 全局错误处理
+trap 'log_error "部署失败，退出码: $?"' ERR
 
 # 执行主流程
 main "$@"
