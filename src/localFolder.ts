@@ -137,48 +137,59 @@ export function supportsDirectoryPicker(): boolean {
 
 type DirHandle = {
   name: string;
-  values: () => AsyncIterable<{
-    kind: string;
-    name?: string;
-    getFile?: () => Promise<File>;
-    values?: () => AsyncIterable<unknown>;
-  }>;
+  values: () => AsyncIterable<DirEntry>;
 };
 
-async function pickWithShowDirectoryPicker(): Promise<File[]> {
+type DirEntry =
+  | { kind: "file"; name: string; getFile: () => Promise<File> }
+  | ({ kind: "directory" } & DirHandle);
+
+const isRecordingDirectory = (name: string) => /^(driverecord|sentinel)$/i.test(name);
+
+async function pickWithShowDirectoryPicker(signal?: AbortSignal): Promise<File[]> {
   const w = window as Window & {
     showDirectoryPicker?: () => Promise<DirHandle>;
   };
   if (typeof w.showDirectoryPicker !== "function") return [];
+  let handle: DirHandle;
   try {
-    const handle = await w.showDirectoryPicker();
-    const files: File[] = [];
-    const walk = async (dir: DirHandle | { values: DirHandle["values"] }, prefix: string) => {
-      for await (const entry of dir.values()) {
-        if (entry.kind === "file" && entry.getFile) {
-          const file = await entry.getFile();
-          const relative = prefix ? `${prefix}/${file.name}` : file.name;
-          Object.defineProperty(file, "webkitRelativePath", {
-            configurable: true,
-            value: `${handle.name}/${relative}`,
-          });
-          files.push(file);
-        } else if (entry.kind === "directory" && entry.values) {
-          await walk(entry as DirHandle, prefix ? `${prefix}/${entry.name}` : String(entry.name));
-        }
-      }
-    };
-    await walk(handle, "");
-    return files;
+    handle = await w.showDirectoryPicker();
   } catch (error) {
-    if (
-      error instanceof DOMException &&
-      (error.name === "AbortError" || error.name === "NotAllowedError")
-    ) {
-      return [];
-    }
+    if (error instanceof DOMException && error.name === "AbortError") return [];
     throw error;
   }
+  signal?.throwIfAborted();
+  const files: File[] = [];
+  const walk = async (dir: DirHandle, prefix: string) => {
+    signal?.throwIfAborted();
+    const entries: DirEntry[] = [];
+    for await (const entry of dir.values()) {
+      signal?.throwIfAborted();
+      if (!entry.name.startsWith(".")) entries.push(entry);
+    }
+    const containsRecordingFolders = entries.some(
+      (entry) => entry.kind === "directory" && isRecordingDirectory(entry.name),
+    );
+    for (const entry of entries) {
+      signal?.throwIfAborted();
+      if (entry.kind === "file") {
+        if (!/\.h264$/i.test(entry.name)) continue;
+        const file = await entry.getFile();
+        signal?.throwIfAborted();
+        const relative = prefix ? `${prefix}/${file.name}` : file.name;
+        Object.defineProperty(file, "webkitRelativePath", {
+          configurable: true,
+          value: `${handle.name}/${relative}`,
+        });
+        files.push(file);
+      } else if (!containsRecordingFolders || isRecordingDirectory(entry.name)) {
+        await walk(entry, prefix ? `${prefix}/${entry.name}` : entry.name);
+      }
+    }
+  };
+  await walk(handle, "");
+  signal?.throwIfAborted();
+  return files;
 }
 
 /**
@@ -418,12 +429,59 @@ export function pickDirectoryFiles(signal?: AbortSignal, waitOpts?: WaitOpts): P
   if (signal?.aborted) return Promise.resolve([]);
   if (isMobileBrowser()) return Promise.reject(new Error(iPhoneDirectoryMessage));
   if (supportsDirectoryPicker()) {
-    return pickWithShowDirectoryPicker().catch(() => pickWithWebkitDirectory(signal, waitOpts));
+    // Choose the fallback only before opening UI. Errors after a grant must never reopen a picker.
+    return pickWithShowDirectoryPicker(signal);
   }
   return pickWithWebkitDirectory(signal, waitOpts);
 }
 
+/** Keep a single manual collection while retaining unrelated auto-scanned drives. */
+export function appendLocalDrive(
+  previous: LocalDrive[],
+  incoming: LocalDrive,
+  localFiles: ReadonlyMap<string, File>,
+): LocalDrive[] {
+  const index = previous.findIndex((drive) =>
+    drive.recordings.some((recording) => localFiles.has(recording.id)),
+  );
+  const current = previous[index];
+  if (!current) return [...previous, incoming];
+  const recordings = new Map(current.recordings.map((recording) => [recording.id, recording]));
+  for (const recording of incoming.recordings) {
+    if (!recordings.has(recording.id)) recordings.set(recording.id, recording);
+  }
+  if (recordings.size === current.recordings.length) return previous;
+  return previous.map((drive, i) =>
+    i === index
+      ? {
+          ...current,
+          recordings: [...recordings.values()].sort((a, b) => b.stamp.localeCompare(a.stamp)),
+        }
+      : drive,
+  );
+}
+
+const fileMetadataKey = (file: File) => JSON.stringify([file.name, file.size, file.lastModified]);
+const knownFilePath = (file: File) => (file.webkitRelativePath || "").replace(/\\/g, "/");
+const fileSamples = new WeakMap<File, Promise<Uint8Array>>();
+
+/** Only ambiguous pathless matches read content: at most 64 KiB per file. */
+function sampleFile(file: File): Promise<Uint8Array> {
+  let pending = fileSamples.get(file);
+  if (!pending) {
+    pending = new Blob([
+      file.slice(0, 32 * 1024),
+      file.slice(Math.max(32 * 1024, file.size - 32 * 1024)),
+    ])
+      .arrayBuffer()
+      .then((bytes) => new Uint8Array(bytes));
+    fileSamples.set(file, pending);
+  }
+  return pending;
+}
+
 type IndexOptions = {
+  existingFiles?: ReadonlyMap<string, File>;
   signal?: AbortSignal;
   onProgress?: (processed: number, total: number) => void;
 };
@@ -455,9 +513,19 @@ export async function buildDriveFromFiles(
   const { signal, onProgress } = options;
   signal?.throwIfAborted();
   const recordings: LocalRecording[] = [];
+  const seenIds = new Set<string>();
+  const candidates = new Map<string, Array<{ id: string; file: File }>>();
+  const indexFile = (id: string, file: File) => {
+    const key = fileMetadataKey(file);
+    const bucket = candidates.get(key) ?? [];
+    bucket.push({ id, file });
+    candidates.set(key, bucket);
+  };
+  for (const [id, file] of options.existingFiles ?? []) indexFile(id, file);
   let h264Count = 0;
   onProgress?.(0, files.length);
-  // Only inspect metadata here. Video reads/remuxing start when a clip is opened.
+  // Index metadata first; ambiguous pathless duplicates use bounded samples.
+  // Full video reads/remuxing still start only when a clip is opened.
   for (let offset = 0; offset < files.length; offset += 50) {
     await yieldForImport(signal);
     signal?.throwIfAborted();
@@ -469,15 +537,47 @@ export async function buildDriveFromFiles(
       const relative =
         (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
       const kind = kindFromPath(relative) ?? "drive";
-      const id = await hashId(`local:${relative}:${file.size}:${file.lastModified}`);
+      let id = await hashId(`local:${relative}:${file.size}:${file.lastModified}`);
       signal?.throwIfAborted();
+      let retainedFile = file;
+      let reused = false;
+      for (const candidate of candidates.get(fileMetadataKey(file)) ?? []) {
+        const previousPath = knownFilePath(candidate.file);
+        const nextPath = knownFilePath(file);
+        // Known distinct directories must not collapse just because basenames match.
+        if (previousPath && nextPath && previousPath !== nextPath) continue;
+        if (candidate.file !== file && (!previousPath || !nextPath)) {
+          const [before, after] = await Promise.all([sampleFile(candidate.file), sampleFile(file)]);
+          signal?.throwIfAborted();
+          if (before.length !== after.length || !before.every((byte, i) => byte === after[i])) {
+            continue;
+          }
+        }
+        id = candidate.id;
+        retainedFile = candidate.file;
+        reused = true;
+        break;
+      }
+      // Pathless files can share all metadata yet contain different recordings.
+      if (!reused && candidates.get(fileMetadataKey(file))?.some((c) => c.id === id)) {
+        const sample = await sampleFile(file);
+        signal?.throwIfAborted();
+        const fingerprint = Array.from(sample, (byte) => byte.toString(16).padStart(2, "0")).join(
+          "",
+        );
+        id = await hashId(`${id}:sample:${fingerprint}`);
+        signal?.throwIfAborted();
+      }
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+      indexFile(id, retainedFile);
       recordings.push({
         id,
         name: file.name,
         stamp: stampForName(file.name),
         kind,
         size: file.size,
-        file,
+        file: retainedFile,
         relativePath: relative,
       });
     }

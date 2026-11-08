@@ -39,6 +39,7 @@ import { dateCounts, dayKey } from "./calendar";
 import { cx } from "@/utils/cx";
 import {
   abortDirectoryPick,
+  appendLocalDrive,
   buildDriveFromFiles,
   iosDirectoryUploadLikelySupported,
   isLikelyMobileSafari,
@@ -287,6 +288,7 @@ export default function App() {
         return;
       }
       const { drive, fileMap } = await buildDriveFromFiles(files, {
+        existingFiles: localFilesRef.current,
         signal: ac.signal,
         onProgress: (processed, total) => {
           if (gen !== pickGenRef.current || ac.signal.aborted) return;
@@ -294,36 +296,21 @@ export default function App() {
         },
       });
       if (gen !== pickGenRef.current || ac.signal.aborted) return;
+      const firstImport = localFilesRef.current.size === 0 && autoRecordingsRef.current.size === 0;
       manualSourceRef.current = true;
-      localFilesRef.current = iPhoneMode
-        ? new Map([...localFilesRef.current, ...fileMap])
-        : fileMap;
-      if (iPhoneMode) {
-        drive.id = "mobile-recordings";
-        setDrives((previous) => [
-          {
-            ...drive,
-            recordings: [
-              ...new Map(
-                [...previous.flatMap((item) => item.recordings), ...drive.recordings].map(
-                  (recording) => [recording.id, recording],
-                ),
-              ).values(),
-            ].sort((a, b) => b.stamp.localeCompare(a.stamp)),
-          },
-        ]);
-      } else {
-        setDrives([drive]);
+      for (const [id, file] of fileMap) {
+        if (!localFilesRef.current.has(id)) localFilesRef.current.set(id, file);
       }
-      setDriveId(drive.id);
-      setKind(drive.recordings[0]?.kind ?? "drive");
+      setDrives((previous) => appendLocalDrive(previous, drive, localFilesRef.current));
+      setDriveId((current) => current || drive.id);
+      if (firstImport) {
+        setKind(drive.recordings[0]?.kind ?? "drive");
+        setSelectedDate("");
+      }
       setScanError("");
       setPickProgress("");
-      setSelected("");
-      setSelectedDate("");
-      void navigate({ to: "/" });
     },
-    [navigate, iPhoneMode],
+    [iPhoneMode],
   );
 
   const beginPick = useCallback(
@@ -440,7 +427,7 @@ export default function App() {
 
   const autoAvailable =
     drives.some((drive) => drive.recordings.some((recording) => recording.id === selected)) &&
-    !manualSourceRef.current;
+    autoRecordingsRef.current.has(selected);
 
   const pickFolder = useCallback(() => beginPick("directory"), [beginPick]);
   const pickFiles = useCallback(() => beginPick("files"), [beginPick]);
@@ -476,7 +463,7 @@ export default function App() {
       try {
         let localFile = localFilesRef.current.get(selected);
         const autoRecording = autoRecordingsRef.current.get(selected);
-        if (!localFile && autoRecording && !manualSourceRef.current) {
+        if (!localFile && autoRecording) {
           setPrepareProgress("正在从 U 盘读取录像…");
           const response = await fetch(`/api/local-drives/${encodeURIComponent(selected)}`, {
             signal: controller.signal,

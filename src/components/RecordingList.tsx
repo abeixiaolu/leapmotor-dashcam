@@ -61,7 +61,14 @@ export function RecordingList(p: Props) {
       {!p.hideBrand && (
         <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-separator-border px-4">
           <div className="flex min-w-0 items-center gap-2 text-body-medium text-text-primary">
-            <Video className="size-6 shrink-0" aria-hidden />
+            <img
+              src={`${import.meta.env.BASE_URL}favicon.svg`}
+              alt=""
+              aria-hidden="true"
+              width={24}
+              height={24}
+              className="size-6 shrink-0 rounded-md object-contain"
+            />
             <span className="truncate">零跑记录仪</span>
           </div>
           <Button
