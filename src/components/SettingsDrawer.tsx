@@ -146,7 +146,7 @@ export function SettingsDrawer({
               onChange={(amount) => onClarityChange({ ...clarity, amount })}
             />
             <p className="text-caption-1-regular text-text-secondary">
-              适度强化画面轮廓，不恢复原片缺失的细节。仅影响回放，导出视频保持原有处理。
+              适度强化画面边缘与明暗对比，不补画原片细节。仅影响回放，导出视频保持原有处理。
             </p>
             {clarity.mode === "comparison" && (
               <p className="text-caption-1-regular text-text-secondary">左侧原画，右侧增强。</p>

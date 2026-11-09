@@ -32,20 +32,40 @@ void main() {
     return;
   }
 
-  vec2 texelStep = pixel * 2.;
+  vec2 stepSize = pixel * 2.;
   float center = luma(original.rgb);
-  float north = neighborLuma(local - vec2(0., texelStep.y));
-  float south = neighborLuma(local + vec2(0., texelStep.y));
-  float west = neighborLuma(local - vec2(texelStep.x, 0.));
-  float east = neighborLuma(local + vec2(texelStep.x, 0.));
-  float low = min(center, min(min(north, south), min(west, east)));
-  float high = max(center, max(max(north, south), max(west, east)));
-  float detail = center - (north + south + west + east) * .25;
-  float contrast = high - low;
-  float gate = smoothstep(.01, .05, contrast) * (1. - .5 * smoothstep(.15, .5, contrast));
-  float limit = .025 * clarityAmount;
-  float delta = clamp(detail * .6 * clarityAmount * gate, -limit, limit);
-  delta = clamp(center + delta, low, high) - center;
+  float n = neighborLuma(local + stepSize * vec2(0., -1.));
+  float s = neighborLuma(local + stepSize * vec2(0., 1.));
+  float w = neighborLuma(local + stepSize * vec2(-1., 0.));
+  float e = neighborLuma(local + stepSize * vec2(1., 0.));
+  float nw = neighborLuma(local + stepSize * vec2(-1., -1.));
+  float ne = neighborLuma(local + stepSize * vec2(1., -1.));
+  float sw = neighborLuma(local + stepSize * vec2(-1., 1.));
+  float se = neighborLuma(local + stepSize * vec2(1., 1.));
+  float low = min(center, min(min(n, s), min(w, e)));
+  float high = max(center, max(max(n, s), max(w, e)));
+  float range = high - low;
+  float nearMean = (center * 4. + (n + s + w + e) * 2. + nw + ne + sw + se) / 16.;
+  float fine = center - nearMean;
+  fine = sign(fine) * max(abs(fine) - .003, 0.);
+  float edgeGate = smoothstep(.012, .06, range) * (1. - .65 * smoothstep(.15, .5, range));
+  float detail = fine * 2.2 * edgeGate;
+
+  float farMean = (neighborLuma(local + stepSize * vec2(0., -6.))
+    + neighborLuma(local + stepSize * vec2(0., 6.))
+    + neighborLuma(local + stepSize * vec2(-6., 0.))
+    + neighborLuma(local + stepSize * vec2(6., 0.))) * .25;
+  float coarse = nearMean - farMean;
+  coarse = sign(coarse) * max(abs(coarse) - .006, 0.);
+  detail += clamp(coarse * 1.15, -.06, .06);
+
+  float overshoot = range * .2 * clarityAmount;
+  float corrected = clamp(
+    center + clamp(detail * clarityAmount, -.07 * clarityAmount, .07 * clarityAmount),
+    low - overshoot, high + overshoot
+  );
+  corrected += clarityAmount * .65 * corrected * (1. - corrected) * (2. * corrected - 1.);
+  float delta = corrected - center;
   gl_FragColor = vec4(clamp(original.rgb + delta, 0., 1.), original.a);
 }
 `;
