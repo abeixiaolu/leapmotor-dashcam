@@ -31,6 +31,7 @@ import { useThemePreference } from "./theme";
 import { SettingsDrawer } from "@/components/SettingsDrawer";
 import { readCorrectionSettings, saveCorrectionSettings } from "@/settings";
 import { MosaicPlayer } from "./MosaicPlayer";
+import { PlateRecognition } from "@/components/PlateRecognition";
 import { clock } from "./library";
 import type { Direction } from "./library";
 import { HelpDialog } from "./components/HelpDialog";
@@ -545,6 +546,7 @@ export default function App() {
     setError(message);
     setPlaying(false);
   }, []);
+  const recovered = useCallback(() => setError(""), []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (
@@ -737,6 +739,7 @@ export default function App() {
                 onDuration={setDuration}
                 onPlaying={setPlaying}
                 onError={report}
+                onRecovered={recovered}
               />
             ) : (
               <div
@@ -890,6 +893,20 @@ export default function App() {
                   </div>
                 </div>
               </div>
+              {!iPhoneMode && status === "ready" && src && (
+                <PlateRecognition
+                  key={`${selected}-${src}`}
+                  recordingId={selected}
+                  src={src}
+                  duration={duration}
+                  portalContainer={stage ? (playerRef.current ?? undefined) : undefined}
+                  onSelect={(plateTime, direction) => {
+                    setPrimary(direction);
+                    setLayout("focus");
+                    jump(plateTime);
+                  }}
+                />
+              )}
               {saveHint && (
                 <p role="status" className="mt-2 text-caption-1-regular text-text-secondary">
                   {saveHint}
