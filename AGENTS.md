@@ -1,3 +1,9 @@
+# 提交前清理
+
+- 提交代码前，删除临时测试、验证和性能测量脚本（例如临时创建的 `scripts/bench-*.mjs`），不要仅将它们排除在提交之外或留为未跟踪文件。
+- 保留项目正式测试用例（如 `*.test.ts`、`*.spec.ts`）及日常维护脚本，除非用户明确要求删除。
+- 提交前检查 `git status`，确认没有遗留临时脚本。
+
 <!--VITE PLUS START-->
 
 # Using Vite+, the Unified Toolchain for the Web
