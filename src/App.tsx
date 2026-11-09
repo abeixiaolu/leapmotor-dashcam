@@ -30,6 +30,7 @@ import { PlayerSlider, PlaybackSpeed } from "./components/PlayerControls";
 import { useThemePreference } from "./theme";
 import { SettingsDrawer } from "@/components/SettingsDrawer";
 import { readCorrectionSettings, saveCorrectionSettings } from "@/settings";
+import { readClaritySettings, saveClaritySettings } from "@/videoClarity";
 import { MosaicPlayer } from "./MosaicPlayer";
 import { clock } from "./library";
 import type { Direction } from "./library";
@@ -78,6 +79,11 @@ export default function App() {
     [seek, setSeek] = useState({ time: 0, token: 0 });
   const theme = useThemePreference();
   const [settings, setSettings] = useState(readCorrectionSettings);
+  const [clarity, setClarity] = useState(readClaritySettings);
+  const [claritySaved, setClaritySaved] = useState(true);
+  useEffect(() => {
+    setClaritySaved(saveClaritySettings(clarity));
+  }, [clarity]);
   const { correct, fov, strength } = settings;
   const [settingsSaved, setSettingsSaved] = useState(true);
   useEffect(() => {
@@ -730,6 +736,7 @@ export default function App() {
                 correct={correct}
                 fov={fov}
                 strength={strength}
+                clarity={clarity}
                 layout={layout}
                 primary={primary}
                 onPrimary={(next) => changeCameraLayout(() => setPrimary(next))}
@@ -922,7 +929,9 @@ export default function App() {
         onOpenChange={setSettingsOpen}
         value={settings}
         onChange={setSettings}
-        saved={settingsSaved && theme.saved}
+        clarity={clarity}
+        onClarityChange={setClarity}
+        saved={settingsSaved && claritySaved && theme.saved}
         theme={theme.preference}
         onThemeChange={theme.setPreference}
       />

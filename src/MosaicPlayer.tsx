@@ -5,6 +5,14 @@ import { directions, labels } from "./library";
 import type { Direction } from "./library";
 import { quadrants } from "./mosaicMath";
 import { playbackErrorMessage } from "./media/playbackError";
+import { Badge } from "@/components/base/badges/badge";
+import { CLARITY_FRAGMENT_SHADER } from "@/clarityShader";
+import type { ClarityMode, ClaritySettings } from "@/videoClarity";
+
+const clarityModes = { original: 0, enhanced: 1, comparison: 2 } satisfies Record<
+  ClarityMode,
+  number
+>;
 
 type Props = {
   src: string;
@@ -14,6 +22,7 @@ type Props = {
   correct: boolean;
   fov: number;
   strength: number;
+  clarity: ClaritySettings;
   layout: "focus" | "grid";
   primary: Direction;
   onPrimary: (d: Direction) => void;
@@ -30,6 +39,7 @@ function View({
   correct,
   fov,
   strength,
+  clarity,
   onError,
 }: {
   frameSerial: RefObject<number>;
@@ -38,11 +48,12 @@ function View({
   correct: boolean;
   fov: number;
   strength: number;
+  clarity: ClaritySettings;
   onError: (s: string) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const settings = useRef({ correct, fov, strength });
-  settings.current = { correct, fov, strength };
+  const settings = useRef({ correct, fov, strength, clarity });
+  settings.current = { correct, fov, strength, clarity };
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
@@ -66,10 +77,7 @@ function View({
         gl.VERTEX_SHADER,
         "attribute vec2 pos;varying vec2 uv;void main(){uv=vec2(pos.x*.5+.5,.5-pos.y*.5);gl_Position=vec4(pos,0.,1.);}",
       );
-      fragment = compile(
-        gl.FRAGMENT_SHADER,
-        `precision highp float;varying vec2 uv;uniform sampler2D frame;uniform vec2 quadrant;uniform vec2 pixel;uniform float fov;uniform float strength;void main(){vec2 p=(uv*2.-1.)*tan(radians(fov)*.5);p.y/=1.25;float r=length(p);float k=r>.000001?atan(r)/r/3.14159265:1./3.14159265;vec2 lens=.5+p*k*vec2(1.,1.25);vec2 local=mix(uv,lens,strength);local=clamp(local,pixel,1.-pixel);vec2 source=(local+quadrant)*.5;gl_FragColor=texture2D(frame,source);}`,
-      );
+      fragment = compile(gl.FRAGMENT_SHADER, CLARITY_FRAGMENT_SHADER);
       program = gl.createProgram();
       gl.attachShader(program!, vertex);
       gl.attachShader(program!, fragment);
@@ -100,14 +108,16 @@ function View({
     gl.uniform2f(gl.getUniformLocation(program!, "quadrant"), ...quadrants[direction]);
     const fovUniform = gl.getUniformLocation(program!, "fov"),
       strengthUniform = gl.getUniformLocation(program!, "strength"),
-      pixelUniform = gl.getUniformLocation(program!, "pixel");
+      pixelUniform = gl.getUniformLocation(program!, "pixel"),
+      clarityModeUniform = gl.getUniformLocation(program!, "clarityMode"),
+      clarityAmountUniform = gl.getUniformLocation(program!, "clarityAmount");
     let raf = 0,
       lastFrame = -1,
       lastSettings = "",
       failed = false;
     const draw = () => {
       const s = settings.current;
-      const signature = `${s.correct}-${s.fov}-${s.strength}`;
+      const signature = `${s.correct}-${s.fov}-${s.strength}-${s.clarity.mode}-${s.clarity.amount}`;
       if (
         video.readyState >= 2 &&
         video.videoWidth &&
@@ -120,6 +130,8 @@ function View({
           canvas.height = height;
           gl.viewport(0, 0, width, height);
         }
+        gl.uniform1f(clarityModeUniform, clarityModes[s.clarity.mode]);
+        gl.uniform1f(clarityAmountUniform, s.clarity.amount);
         gl.uniform1f(fovUniform, s.fov);
         gl.uniform1f(strengthUniform, s.correct ? s.strength : 0);
         gl.uniform2f(pixelUniform, 1 / video.videoWidth, 1 / video.videoHeight);
@@ -253,8 +265,26 @@ export function MosaicPlayer(p: Props) {
             correct={p.correct}
             fov={p.fov}
             strength={p.strength}
+            clarity={p.clarity}
             onError={p.onError}
           />
+          {p.clarity.mode === "comparison" && (
+            <div className="pointer-events-none absolute inset-0 z-2" aria-hidden>
+              <div className="absolute inset-y-0 left-1/2 border-s border-border-button-default" />
+              <Badge
+                color="neutral"
+                className="absolute bottom-2 left-2 bg-background-primary-default"
+              >
+                原画
+              </Badge>
+              <Badge
+                color="neutral"
+                className="absolute right-2 bottom-2 bg-background-primary-default"
+              >
+                增强
+              </Badge>
+            </div>
+          )}
           <button
             className="camera-select"
             aria-label={`设为主视角：${labels[d]}`}

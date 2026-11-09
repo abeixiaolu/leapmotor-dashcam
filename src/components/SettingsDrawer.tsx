@@ -1,3 +1,5 @@
+import { RiRestartLine } from "@remixicon/react";
+import { DEFAULT_CLARITY_SETTINGS, type ClaritySettings } from "@/videoClarity";
 import Reset from "@carbon/icons-react/es/Reset.js";
 import Screen from "@carbon/icons-react/es/Screen.js";
 import Sun from "@carbon/icons-react/es/Sun.js";
@@ -20,6 +22,8 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   value: CorrectionSettings;
   onChange: (value: CorrectionSettings) => void;
+  clarity: ClaritySettings;
+  onClarityChange: (value: ClaritySettings) => void;
   saved: boolean;
   theme: ThemePreference;
   onThemeChange: (value: ThemePreference) => void;
@@ -30,6 +34,8 @@ export function SettingsDrawer({
   onOpenChange,
   value,
   onChange,
+  clarity,
+  onClarityChange,
   saved,
   theme,
   onThemeChange,
@@ -87,6 +93,64 @@ export function SettingsDrawer({
                 <span className="ms-1">深色</span>
               </SegmentedControlItem>
             </SegmentedControl>
+          </section>
+          <section
+            aria-labelledby="clarity-settings-title"
+            className="mb-6 flex flex-col gap-4 border-b border-separator-border pb-6"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="clarity-settings-title" className="text-body-medium text-text-primary">
+                视频清晰度
+              </h2>
+              <Button
+                variant="ghost"
+                size="small"
+                leadingIcon={RiRestartLine}
+                aria-label="重置清晰度"
+                onClick={() => onClarityChange({ ...DEFAULT_CLARITY_SETTINGS })}
+              >
+                重置
+              </Button>
+            </div>
+            <SegmentedControl
+              aria-labelledby="clarity-settings-title"
+              selectedKeys={new Set([clarity.mode])}
+              onSelectionChange={(keys) => {
+                const mode = [...keys][0];
+                if (mode === "original" || mode === "enhanced" || mode === "comparison") {
+                  onClarityChange({ ...clarity, mode });
+                }
+              }}
+              className="w-full"
+            >
+              <SegmentedControlItem id="original" className="flex-1">
+                原画
+              </SegmentedControlItem>
+              <SegmentedControlItem id="enhanced" className="flex-1">
+                增强
+              </SegmentedControlItem>
+              <SegmentedControlItem id="comparison" className="flex-1">
+                左右对比
+              </SegmentedControlItem>
+            </SegmentedControl>
+            <Slider
+              label="增强强度"
+              thumbLabel="增强强度"
+              variant="field"
+              minValue={0}
+              maxValue={1}
+              step={0.01}
+              value={clarity.amount}
+              formatValue={(n) => `${Math.round(n * 100)}%`}
+              isDisabled={clarity.mode === "original"}
+              onChange={(amount) => onClarityChange({ ...clarity, amount })}
+            />
+            <p className="text-caption-1-regular text-text-secondary">
+              适度强化画面轮廓，不恢复原片缺失的细节。仅影响回放，导出视频保持原有处理。
+            </p>
+            {clarity.mode === "comparison" && (
+              <p className="text-caption-1-regular text-text-secondary">左侧原画，右侧增强。</p>
+            )}
           </section>
           <section aria-labelledby="correction-settings-title" className="flex flex-col gap-4">
             <div className="flex items-center justify-between gap-3">
