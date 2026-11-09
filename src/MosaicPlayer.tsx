@@ -4,7 +4,8 @@ import { cx } from "@/utils/cx";
 import { directions, labels } from "./library";
 import type { Direction } from "./library";
 import { quadrants } from "./mosaicMath";
-import { playbackErrorMessage } from "./media/playbackError";
+import { controlPlayback } from "./media/playback";
+import type { PlaybackIntent } from "./media/playback";
 import { Badge } from "@/components/base/badges/badge";
 import { CLARITY_FRAGMENT_SHADER } from "@/clarityShader";
 import type { ClarityMode, ClaritySettings } from "@/videoClarity";
@@ -14,11 +15,8 @@ const clarityModes = { original: 0, enhanced: 1, comparison: 2 } satisfies Recor
   number
 >;
 
-type Props = {
+type Props = PlaybackIntent & {
   src: string;
-  playing: boolean;
-  rate: number;
-  seek: { time: number; token: number };
   correct: boolean;
   fov: number;
   strength: number;
@@ -30,6 +28,7 @@ type Props = {
   onDuration: (n: number) => void;
   onPlaying: (b: boolean) => void;
   onError: (s: string) => void;
+  onRecovered: () => void;
 };
 
 function View({
@@ -169,26 +168,29 @@ export function MosaicPlayer(p: Props) {
   const frameSerial = useRef(0);
   const callbacks = useRef(p);
   callbacks.current = p;
+  const playback = useRef<ReturnType<typeof controlPlayback> | null>(null);
 
   useEffect(() => {
     if (!video) return;
-    video.playbackRate = p.rate;
-    if (p.playing) {
-      void video.play().catch((e: DOMException) => {
-        if (e.name !== "AbortError") {
-          callbacks.current.onPlaying(false);
-          callbacks.current.onError("无法播放此片段，请尝试重新载入。");
-        }
-      });
-    } else video.pause();
-  }, [video, p.playing, p.rate, p.src]);
+    const controller = controlPlayback({
+      video,
+      src: p.src,
+      onError: (message) => {
+        callbacks.current.onPlaying(false);
+        callbacks.current.onError(message);
+      },
+      onRecovered: () => callbacks.current.onRecovered(),
+    });
+    playback.current = controller;
+    return () => {
+      controller.dispose();
+      if (playback.current === controller) playback.current = null;
+    };
+  }, [video, p.src]);
 
   useEffect(() => {
-    if (video && video.readyState >= 1) {
-      video.currentTime = Math.max(0, Math.min(p.seek.time, video.duration));
-      callbacks.current.onTime(video.currentTime);
-    }
-  }, [video, p.seek.token, p.seek.time]);
+    playback.current?.update({ playing: p.playing, rate: p.rate, seek: p.seek });
+  }, [video, p.src, p.playing, p.rate, p.seek]);
 
   useEffect(() => {
     if (!video) return;
@@ -254,7 +256,6 @@ export function MosaicPlayer(p: Props) {
         style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
         onLoadedMetadata={(e) => p.onDuration(e.currentTarget.duration)}
         onEnded={() => p.onPlaying(false)}
-        onError={(event) => p.onError(playbackErrorMessage(event.currentTarget.error))}
       />
       {directions.map((d) => (
         <section key={d} className={cx("camera", `camera-${d}`, p.primary === d && "is-primary")}>

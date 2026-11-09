@@ -1,0 +1,12 @@
+HyperLPR3 model release 20230229
+Project: https://github.com/szad670401/HyperLPR
+License: Apache License 2.0 (included as LICENSE.txt)
+
+This distribution includes the unmodified y5fu_640x_sim.onnx and
+rpv3_mdict_160_r3.onnx weights, renamed detector and recognizer in source.
+The browser adapter uses the upstream detector preprocessing and token
+vocabulary. It performs bilinear perspective sampling in TypeScript.
+No OpenCV implementation is included.
+
+Source archive: http://hyperlpr.tunm.top/raw/20230229.zip
+Source code revision: 9307450f7b7915be18f23a539ec05b41fe6629f4

@@ -12,3 +12,4 @@ peerDependencyRules:
 allowBuilds:
   "@carbon/icon-helpers": false
   "@carbon/icons-react": false
+  protobufjs: false
